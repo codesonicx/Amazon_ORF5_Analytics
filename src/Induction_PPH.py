@@ -92,9 +92,8 @@ parsed_df = pd.concat([temp_df.drop(columns=["rawMessage"]), message_df], axis=1
 # Cleaning DataFrame
 # Get list of columns with only 1 unique value, but preserve "inductionNo"
 cols_to_drop = parsed_df.columns[parsed_df.nunique() == 1].tolist()
-for col in ["inductionNo"]:
-    if col in cols_to_drop:
-        cols_to_drop.remove(col)
+if "inductionNo" in cols_to_drop:
+    cols_to_drop.remove("inductionNo")
 # Usual Columns Dropped
 # ['flag', 'systemName', 'ipAddress', 'unkown', 'unkown_2', 'machineCode', 'destinationNo', 'comHost', 'comMode', 'telegramType']    
 
