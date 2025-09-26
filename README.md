@@ -36,13 +36,19 @@ uv sync
 
 ### 3. Run analysis
 
-Execute a script from the `src/` folder, for example:
+You can run any script inside the `src/` folder. For example:
 
-```bash
-uv run src/SO4.py
-```
+* **Run S04 analysis**
 
-Replace `SO4.py` with the script you want to run.
+  ```bash
+  uv run src/SO4.py
+  ```
+
+* **Run PPH (Packages per Hour) analysis**
+
+  ```bash
+  uv run src/PPH.py
+  ```
 
 ---
 
