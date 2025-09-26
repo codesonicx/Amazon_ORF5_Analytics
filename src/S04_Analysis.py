@@ -245,6 +245,15 @@ defect_summary = (
     .reset_index(name="count")
 )
 
+# Adding "No Defect" row
+defect_count_total = defect_summary["count"].sum()
+no_defect_count = total_processed - defect_count_total
+
+defect_summary = pd.concat(
+    [defect_summary, pd.DataFrame([{"defectCategory": "No Defect", "count": no_defect_count}])],
+    ignore_index=True
+)
+
 # Percent over total processed
 defect_summary["percentage"] = (defect_summary["count"] / total_processed * 100).round(4)
 print(defect_summary)
@@ -252,8 +261,7 @@ print(defect_summary)
 # Filter for sortCode 8, 9, and 10 (Scan Defects) using the helper column 'defectCategory'
 scan_defect_df = window_df[window_df['defectCategory'] == "Scan Defect"]
 print("\nBreakdown by Scan Defect:")
-print(f"Found {len(scan_defect_df)} items with sortCode 8, 9, or 10:")
-print(scan_defect_df['defectCategory'].value_counts().sort_index())
+print(f"Found '{len(scan_defect_df)}' items with sortCode 8, 9, or 10 (Scan Defects)")
 
 # Create a new dataset with just the columns we need
 export_df = scan_defect_df[['indexNo', 'timeStamp', 'sortCode']].copy()
@@ -263,6 +271,7 @@ start_str = start_ts.strftime("%Y%m%d-%H%M%S")
 end_str   = end_ts.strftime("%Y%m%d-%H%M%S")
 output_path = f"data/Analysis_SO4_{start_str}_{end_str}.xlsx"
 
+print("\nExporting analysis results to Excel file...")
 with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     wb = writer.book
     ws = wb.add_worksheet("Analysis_Results")   # type: ignore[attr-defined]
@@ -287,6 +296,40 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     start_row_sort = 8 + len(defect_summary) + 3
     ws.write(start_row_sort - 1, 0, "Sort Code Reason Counts", bold)
     sort_counts.to_excel(writer, sheet_name="Analysis_Results", startrow=start_row_sort, startcol=0, index=False)
+
+    # Creating native charts
+    chart_pie = wb.add_chart({"type": "pie"})   # type: ignore[attr-defined]
+    end_row_def = 8 + len(defect_summary)
+
+    chart_pie.add_series({
+        "name": "Defect Category Breakdown",
+        "categories": ["Analysis_Results", 9, 0, end_row_def, 0],   # defectCategory
+        "values": ["Analysis_Results", 9, 1, end_row_def, 1],       # count column
+        "data_labels": {
+            "percentage": True,
+            "num_format": "0.0%",
+            "position": "outside_end"
+        },
+    })
+    chart_pie.set_title({"name": "Defect Breakdown"})
+    chart_pie.set_legend({"position": "right"})
+
+    ws.insert_chart(0, 6, chart_pie, {"x_scale": 1.5, "y_scale": 1.5})
+
+    bar_chart = wb.add_chart({"type": "column"})    # type: ignore[attr-defined]
+    end_row_sort = start_row_sort + len(sort_counts)
+    bar_chart.add_series({
+        "name": "Sort Code Reason Counts",
+        "categories": ["Analysis_Results", start_row_sort + 1, 0, end_row_sort, 0],
+        "values": ["Analysis_Results", start_row_sort + 1, 1, end_row_sort, 1],
+        "data_labels": {"value": True},
+    })
+    bar_chart.set_title({"name": "Items per Sort Code Reason"})
+    bar_chart.set_x_axis({"name": "Sort Reason"})
+    bar_chart.set_y_axis({"name": "Number of Items"})
+    bar_chart.set_legend({"none": True})
+
+    ws.insert_chart(23, 0, bar_chart, {"x_scale": 1.5, "y_scale": 1.5})
 
     # Other Sheets
     raw_df.to_excel(writer, sheet_name="Raw_Data", index=False)
