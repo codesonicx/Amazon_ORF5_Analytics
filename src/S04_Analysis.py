@@ -61,11 +61,14 @@ def select_file():
     root = tk.Tk()
     root.withdraw()  # Hide the root window
     file_path = filedialog.askopenfilename(
-        title="Select CSV File",
-        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        title="Select File",
+        filetypes=[
+            ("CSV files", "*.csv"),
+            ("Excel files", "*.xlsx;*.xls"),
+            ("All files", "*.*"),
+        ]
     )
 
-    root.destroy()  # Close the Tkinter instance
     return file_path
 
 path = select_file()
@@ -225,6 +228,65 @@ def select_window_cli_24h(df, window_time):
     return win, start, end
 
 window_df, start_ts, end_ts = select_window_cli_24h(clean_df, WINDOW_TIME)
+
+# Optional cleanup of wrong sortCodes
+do_cleanup = input("Do you want to clean up wrong sortCodes using the Excel file? (yes/no): ").strip().lower()
+
+if do_cleanup != "yes":
+    print("\nSkipping sortCode cleanup step.\n")
+else:
+    bad_ids_path = select_file()
+    if not bad_ids_path:
+        print("\nNo file selected. Skipping Cleanup\n")
+    else:
+        # Load file depending on extension
+        if bad_ids_path.endswith(".csv"):
+            bad_ids_df = pd.read_csv(bad_ids_path)
+        elif bad_ids_path.endswith((".xlsx", ".xls")):
+            bad_ids_df = pd.read_excel(bad_ids_path)
+        else:
+            raise ValueError("Unsupported file type selected!")
+
+        # First two columns: ID and Comment
+        id_col = bad_ids_df.columns[0]
+        comment_col = bad_ids_df.columns[1]
+
+        # Build dictionary {indexNo: comment}
+        id_comment_dict = {}
+        for _, row in bad_ids_df.iterrows():
+            if pd.notna(row[id_col]):
+                padded_id = str(int(row[id_col])).zfill(4)
+                comment = row[comment_col] if pd.notna(row[comment_col]) else ""
+                id_comment_dict[padded_id] = comment
+
+        bad_set = set(id_comment_dict.keys())
+
+        # Make sure the explanation column exists
+        if "No Scan Defect Explanation" not in window_df.columns:
+            window_df["No Scan Defect Explanation"] = ""
+
+        # Find matching rows
+        mask = window_df["indexNo"].isin(bad_set)
+        matched_ids = window_df.loc[mask, "indexNo"].dropna().unique().tolist()
+        modified_count = mask.sum()
+
+        # Update rows
+        window_df.loc[mask, "sortCode"] = 0
+        for idx in window_df.index[mask]:
+            index_no = window_df.loc[idx, "indexNo"]
+            if index_no in id_comment_dict:
+                window_df.loc[idx, "No Scan Defect Explanation"] = id_comment_dict[index_no]
+
+        # Report
+        not_found = sorted(list(bad_set.difference(matched_ids)))
+        print(f"Modified sortCode to 0 for {modified_count} rows by exact string match on indexNo.")
+        if matched_ids:
+            print("IDs modified:", matched_ids)
+            print("Comments added to 'No Scan Defect Explanation'")
+        if not_found:
+            print("IDs not found (no rows matched):", not_found)
+
+
 
 # Sort Code Analysis
 # Map sortCode to sortReason and defectCategory columns
