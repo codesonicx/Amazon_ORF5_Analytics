@@ -3,6 +3,7 @@ from tkinter import filedialog
 import pandas as pd
 import csv
 import datetime as dt
+import os
 
 # Global Constants
 TARGET_SCAN_DEFECT_NO_CROSSBELT = 0.01
@@ -344,6 +345,8 @@ print(f"Found '{len(scan_defect_df)}' items with sortCode 8, 9, or 10 (Scan Defe
 # Create a new dataset with just the columns we need
 export_df = scan_defect_df[['indexNo', 'timeStamp', 'sortCode']].copy()
 
+# Ensure "data" folder exists
+os.makedirs("data", exist_ok=True)
 # Exporting to Excel file
 start_str = start_ts.strftime("%Y%m%d-%H%M%S")
 end_str   = end_ts.strftime("%Y%m%d-%H%M%S")
