@@ -251,40 +251,43 @@ else:
         id_col = bad_ids_df.columns[0]
         comment_col = bad_ids_df.columns[1]
 
-        # Build dictionary {indexNo: comment}
+        # Build {indexNo -> comment} with 4-digit padding
         id_comment_dict = {}
         for _, row in bad_ids_df.iterrows():
             if pd.notna(row[id_col]):
-                padded_id = str(int(row[id_col])).zfill(4)
+                key = str(int(row[id_col])).zfill(4)
                 comment = row[comment_col] if pd.notna(row[comment_col]) else ""
-                id_comment_dict[padded_id] = comment
+                id_comment_dict[key] = comment
 
         bad_set = set(id_comment_dict.keys())
 
-        # Make sure the explanation column exists
+        # Ensure explanation column exists
         if "No Scan Defect Explanation" not in window_df.columns:
             window_df["No Scan Defect Explanation"] = ""
 
-        # Find matching rows
-        mask = window_df["indexNo"].isin(bad_set)
-        matched_ids = window_df.loc[mask, "indexNo"].dropna().unique().tolist()
-        modified_count = mask.sum()
+        # Normalize indexNo for matching
+        indexNo_str = window_df["indexNo"].astype(str).str.zfill(4)
 
-        # Update rows
-        window_df.loc[mask, "sortCode"] = 0
-        for idx in window_df.index[mask]:
-            index_no = window_df.loc[idx, "indexNo"]
-            if index_no in id_comment_dict:
-                window_df.loc[idx, "No Scan Defect Explanation"] = id_comment_dict[index_no]
+        # STRICT selection: (sortCode in 8/9/10) AND (indexNo in provided list)
+        scan_mask = window_df["sortCode"].isin([8, 9, 10])
+        id_mask = indexNo_str.isin(bad_set)
+        final_idx = window_df.index[scan_mask & id_mask]
+
+        # Apply updates ONLY to those rows
+        window_df.loc[final_idx, "sortCode"] = 0
+        window_df.loc[final_idx, "No Scan Defect Explanation"] = indexNo_str.loc[final_idx].map(id_comment_dict)
 
         # Report
-        not_found = sorted(list(bad_set.difference(matched_ids)))
-        print(f"Modified sortCode to 0 for {modified_count} rows by exact string match on indexNo.")
+        matched_ids = indexNo_str.loc[final_idx].unique().tolist()
+        modified_count = len(final_idx)
+        not_found = sorted(list(bad_set.difference(set(matched_ids))))
+
+        print(f"Modified sortCode to 0 for {modified_count} rows (indexNo match AND sortCode in 8/9/10).")
         if matched_ids:
             print("IDs modified:", matched_ids)
             print("Comments added to 'No Scan Defect Explanation'")
         if not_found:
-            print("IDs not found (no rows matched):", not_found)
+            print("IDs not applied (no 8/9/10 row for these IDs in window):", not_found)
 
 
 
