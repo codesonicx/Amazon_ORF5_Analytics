@@ -271,26 +271,36 @@ else:
         modified_count = 0
         matched_ids = []
 
-        for bad_id, comment in id_comment_dict.items():
-            # Find candidate rows for this ID
-            matches = scan_defects.index[scan_defects["indexNo"] == bad_id]
+        # Keep track of which rows we've already modified
+        used_rows = set()
 
-            if len(matches) > 0:
-                first_idx = matches[0]   # only take the first one
-                window_df.at[first_idx, "sortCode"] = 0
-                window_df.at[first_idx, "No Scan Defect Explanation"] = comment
-                matched_ids.append(bad_id)
+        for bad_id, comment in zip(bad_ids_df[id_col], bad_ids_df[comment_col]):
+            if pd.isna(bad_id):
+                continue
+            padded_id = str(int(bad_id)).zfill(4)
+
+            # Find candidate rows not already used
+            candidates = scan_defects.index[
+                (scan_defects["indexNo"] == padded_id) & (~scan_defects.index.isin(used_rows))
+            ]
+
+            if len(candidates) > 0:
+                row_idx = candidates[0]   # take the next available one
+                window_df.at[row_idx, "sortCode"] = 0
+                window_df.at[row_idx, "No Scan Defect Explanation"] = comment if pd.notna(comment) else ""
+                used_rows.add(row_idx)
+
+                matched_ids.append(padded_id)
                 modified_count += 1
 
-        # IDs from user list that didn’t match any scan-defect row
-        not_found = sorted(list(set(id_comment_dict.keys()).difference(set(matched_ids))))
+        # IDs from user list that didn’t get applied
+        not_found = [str(int(x)).zfill(4) for x in bad_ids_df[id_col] if str(int(x)).zfill(4) not in matched_ids]
 
-        print(f"Modified sortCode to 0 for {modified_count} rows (first occurrence per ID only).")
+        print(f"Modified sortCode to 0 for {modified_count} rows (respecting duplicates in user list).")
         if matched_ids:
             print("IDs modified:", matched_ids)
-            print("Comments added to 'No Scan Defect Explanation'.")
         if not_found:
-            print("IDs not applied (no scan-defect row found):", not_found)
+            print("IDs not applied (no scan-defect row left):", not_found)
 
 
 
