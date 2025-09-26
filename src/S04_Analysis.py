@@ -419,4 +419,3 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     export_df.to_excel(writer, sheet_name="Scan_Defects", index=False)
 
 print(f"\nAnalysis results saved to: {output_path}")
-
