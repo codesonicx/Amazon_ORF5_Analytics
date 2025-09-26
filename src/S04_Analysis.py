@@ -265,29 +265,32 @@ else:
         if "No Scan Defect Explanation" not in window_df.columns:
             window_df["No Scan Defect Explanation"] = ""
 
-        # Normalize indexNo for matching
-        indexNo_str = window_df["indexNo"].astype(str).str.zfill(4)
+        # Restrict to scan-defect rows
+        scan_defects = window_df[window_df["sortCode"].isin([8, 9, 10])]
 
-        # STRICT selection: (sortCode in 8/9/10) AND (indexNo in provided list)
-        scan_mask = window_df["sortCode"].isin([8, 9, 10])
-        id_mask = indexNo_str.isin(bad_set)
-        final_idx = window_df.index[scan_mask & id_mask]
+        modified_count = 0
+        matched_ids = []
 
-        # Apply updates ONLY to those rows
-        window_df.loc[final_idx, "sortCode"] = 0
-        window_df.loc[final_idx, "No Scan Defect Explanation"] = indexNo_str.loc[final_idx].map(id_comment_dict)
+        for bad_id, comment in id_comment_dict.items():
+            # Find candidate rows for this ID
+            matches = scan_defects.index[scan_defects["indexNo"] == bad_id]
 
-        # Report
-        matched_ids = indexNo_str.loc[final_idx].unique().tolist()
-        modified_count = len(final_idx)
-        not_found = sorted(list(bad_set.difference(set(matched_ids))))
+            if len(matches) > 0:
+                first_idx = matches[0]   # only take the first one
+                window_df.at[first_idx, "sortCode"] = 0
+                window_df.at[first_idx, "No Scan Defect Explanation"] = comment
+                matched_ids.append(bad_id)
+                modified_count += 1
 
-        print(f"Modified sortCode to 0 for {modified_count} rows (indexNo match AND sortCode in 8/9/10).")
+        # IDs from user list that didn’t match any scan-defect row
+        not_found = sorted(list(set(id_comment_dict.keys()).difference(set(matched_ids))))
+
+        print(f"Modified sortCode to 0 for {modified_count} rows (first occurrence per ID only).")
         if matched_ids:
             print("IDs modified:", matched_ids)
-            print("Comments added to 'No Scan Defect Explanation'")
+            print("Comments added to 'No Scan Defect Explanation'.")
         if not_found:
-            print("IDs not applied (no 8/9/10 row for these IDs in window):", not_found)
+            print("IDs not applied (no scan-defect row found):", not_found)
 
 
 
