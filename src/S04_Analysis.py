@@ -1,0 +1,298 @@
+import tkinter as tk
+from tkinter import filedialog
+import pandas as pd
+import csv
+import datetime as dt
+
+# Global Constants
+TARGET_SCAN_DEFECT_NO_CROSSBELT = 0.01
+TARGET_SCAN_DEFECT_WITH_CROSSBELT = 0.005
+TARGET_MH_DEFECT_NO_CROSSBELT = 0.02
+TARGET_MH_DEFECT_WITH_CROSSBELT = 0.01
+WINDOW_TIME = 30  # minutes
+MESSAGE_CODE_FILTER = '54177'  # Items Inducted
+
+# Dictionary for mapping sort codes
+SORT_CODE_MAP = {
+    0: "Success",
+    1: "Unknown",
+    2: "Unexpected_Container",
+    3: "Tracking_Error",
+    4: "Gap_Error",
+    5: "Destination_Full",
+    6: "Destination_Non_Operational",
+    7: "Invalid_Destination",
+    8: "No_Read",
+    9: "No_Code",
+    10: "Multi_Label",
+    11: "<reserved>",
+    12: "Destination_Disabled",
+    13: "Throughput_Limit",
+    14: "Failed_To_Divert",
+    15: "<reserved>",
+    16: "No_Destination_Received",
+    17: "Lost_Container",
+    18: "Dimension_Error",
+    19: "Weight_Error",
+    20: "Container_Utilization",
+    21: "Unable_To_Divert",
+    22: "Destination_Not_Attempted"
+}
+
+# Dictionary of defect categories
+DEFECT_CATEGORY_MAP = {
+    # Scan Defect
+    "Multi_Label": "Scan Defect",
+    "No_Read": "Scan Defect",
+    "No_Code": "Scan Defect",
+
+    # MHE Defect
+    "Failed_To_Divert": "MHE Defect",
+    "Gap_Error": "MHE Defect",
+    "Destination_Non_Operational": "MHE Defect",    # Lane_Non_Operational in doc
+    "Lost_Container": "MHE Defect",
+    "No_Destination_Received": "MHE Defect",
+    "Unknown": "MHE Defect",                        # Sort_Unknown in doc
+    "Tracking_Error": "MHE Defect",
+    "Unable_To_Divert": "MHE Defect",
+}
+
+def select_file():
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    file_path = filedialog.askopenfilename(
+        title="Select CSV File",
+        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+    )
+
+    root.destroy()  # Close the Tkinter instance
+    return file_path
+
+path = select_file()
+
+raw_df = pd.read_csv(
+    path,
+    sep=";",
+    header=None,
+    engine="python",
+    quoting=csv.QUOTE_NONE,
+    skipinitialspace=True,
+    on_bad_lines="skip",
+    dtype=str
+)
+
+# Parsing raw data
+temp_df = raw_df.replace('"', '',regex=True)        # Remove all double quotes
+temp_df = temp_df.replace(r"\s+", '',regex=True)    # Remove all whitespace
+
+temp_df.columns = [
+    "timeStamp", "flag", "systemName", "ipAddress", "sender", "unkown",
+    "unkown_2", "timeStampPLC", "mainCabinetName", "messageCode", "sequenceNo",
+    "rawMessage"
+]
+
+# timeStamp parsing
+temp_df["timeStamp"] = pd.to_datetime(temp_df["timeStamp"], format="%y%m%d%H%M%S%f", errors="coerce")
+
+# Droping records that are not "54177" (S04) in messageCode column
+original_records = len(temp_df)
+temp_df = temp_df[temp_df["messageCode"] == MESSAGE_CODE_FILTER]
+remaining_records = len(temp_df)
+dropped_count = original_records - remaining_records
+print(f"Filtered dataset: kept {remaining_records} rows with messageCode = {MESSAGE_CODE_FILTER} "
+      f"\n\tdropped {dropped_count} out of {original_records} total rows")
+
+# Helper functions to handle arrays inside values
+def split_key_values(text):
+    """Split key:value pairs by commas, ignoring commas inside [brackets]."""
+    parts = []                 # Final list of key:value strings
+    buf = ""                   # Temporary buffer to collect characters
+    inside_brackets = 0        # Counter to track nesting depth of [ ]
+
+    for ch in text:
+        if ch == "[": 
+            inside_brackets += 1   # Entering a bracket → increase depth
+        elif ch == "]": 
+            inside_brackets -= 1   # Leaving a bracket → decrease depth
+
+        # Split only on commas that are *outside* brackets
+        if ch == "," and inside_brackets == 0:
+            parts.append(buf.strip())  # Save the current piece
+            buf = ""                   # Reset buffer for next piece
+        else:
+            buf += ch                  # Keep building the current piece
+
+    # Append the last piece (after the loop ends)
+    if buf:
+        parts.append(buf.strip())
+
+    return parts
+
+def parse_row(text):
+    """Convert a rawMessage string into a dictionary of key:value pairs."""
+    key_value_strings = split_key_values(text)   # Split into ["key1:value1", "key2:value2", ...]
+    parsed_dict = {}                             # Dictionary to hold final result
+
+    for pair in key_value_strings:
+        if ":" in pair:                          # Only process well-formed pairs
+            key, value = pair.split(":", 1)      # Split into key and value (only on the first colon)
+            parsed_dict[key.strip()] = value.strip()  # Clean whitespace and store
+
+    return parsed_dict
+
+def first_element(val):
+    """Extract the first element from a string representation of a list."""
+    if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
+        raw_elements = val.strip("[]").split(",")  # Break into parts
+        parts = []
+        for element in raw_elements:
+            parts.append(element.strip())          # Clean whitespace and collect
+        return parts[0] if parts else val          # Return first element if available
+    return val
+
+# Message Column parsing
+temp_df["rawMessage"] = temp_df["rawMessage"].str.removeprefix("->{").str.removesuffix("}<")
+# Expand rawMessage into columns
+# Keeping in mind that some values are lists enclosed in [ ]
+message_df = temp_df["rawMessage"].apply(parse_row).apply(pd.Series)
+# Extract first element from list-like values
+special_columns = ["requestedDestMCID", "sortCode", "requestedDestStatus"]
+for col in special_columns:
+    message_df[col] = message_df[col].apply(first_element)
+
+# Convert sortCode to integer (nullable type)
+message_df["sortCode"] = pd.to_numeric(message_df["sortCode"], errors="coerce").astype("Int64")
+
+# Join parsed message columns with the base dataframe
+parsed_df = pd.concat([temp_df.drop(columns=["rawMessage"]), message_df], axis=1)
+
+# Cleaning DataFrame
+# Get list of columns with only 1 unique value, but preserve "sortCode"
+cols_to_drop = parsed_df.columns[parsed_df.nunique() == 1].tolist()
+if "sortCode" in cols_to_drop:
+    cols_to_drop.remove("sortCode")
+# Usual Columns Dropped
+# ['flag', 'systemName', 'ipAddress', 'sender', 'unkown', 'unkown_2', 'machineCode', 'unitID', 'event', 'requestedDestStatus', 'comHost', 'comMode', 'telegramType']
+
+clean_df = parsed_df.drop(columns=cols_to_drop)
+# Usual Columns Remaining
+# ['timeStamp', 'PLCTimeStamp', 'sequenceNo', 'plcRecordNo', 'itemID', 'indexNo', 'locationAWCS', 'barcodeAWCS', 'actualDestMCID', 'requestedDestMCID', 'sortCode']
+
+# Rate Analysis
+# using time frame window to select a subset of data and preform analysis
+global_start_time = clean_df["timeStamp"].min()
+global_end_time = clean_df["timeStamp"].max()
+global_delta_time = global_end_time - global_start_time
+
+print(f"Start Time: {global_start_time}")
+print(f"End Time: {global_end_time}")
+print(f"Delta Time: {global_delta_time}\n")
+
+def select_window_cli_24h(df, window_time):
+    s = input("Start time 24h (e.g. 16:00 or 16:00:30 or 16): ").strip()
+    try:
+        t = dt.time.fromisoformat(s)
+    except ValueError:
+        t = dt.time(int(s), 0, 0)
+    start = pd.Timestamp(dt.datetime.combine(global_start_time.date(), t))
+    end   = start + pd.Timedelta(minutes=window_time)
+
+    # Check if start is before global start time
+    if start < global_start_time:
+        print(f"⚠️  WARNING: Requested start time ({start}) is before data begins ({global_start_time})")
+        print(f"   → Adjusting start time to data beginning: {global_start_time}")
+        start = global_start_time
+        end = start + pd.Timedelta(minutes=window_time)
+    
+    # Check if end exceeds global end time
+    if end > global_end_time:
+        original_end = end
+        end = global_end_time
+        actual_window_minutes = (end - start).total_seconds() / 60
+        print(f"⚠️  WARNING: Requested end time ({original_end}) exceeds data boundary ({global_end_time})")
+        print(f"   → Adjusting end time to data boundary: {global_end_time}")
+        print(f"   → Actual window duration: {actual_window_minutes:.1f} minutes (requested: {window_time} minutes)")
+    
+    # Additional check: if start is also beyond global_end_time
+    if start > global_end_time:
+        print(f"❌ ERROR: Requested start time ({start}) is after data ends ({global_end_time})")
+        print("   → No data available for this time window")
+        return df.iloc[0:0].copy(), start, end  # Return empty dataframe
+
+    mask  = (df["timeStamp"] >= start) & (df["timeStamp"] <= end)
+    win   = df.loc[mask].copy()
+    print(f"\nWindow: {start} → {end}  ({window_time} min) | Rows: {len(win)}")
+    return win, start, end
+
+window_df, start_ts, end_ts = select_window_cli_24h(clean_df, WINDOW_TIME)
+
+# Sort Code Analysis
+# Map sortCode to sortReason and defectCategory columns
+window_df["sortReason"] = window_df["sortCode"].map(SORT_CODE_MAP)
+window_df["defectCategory"] = window_df["sortReason"].map(DEFECT_CATEGORY_MAP)
+# Count items by sortReason
+sort_counts = window_df.groupby("sortReason").size().reset_index(name="count").sort_values(by="count", ascending=False).reset_index(drop=True)
+print(sort_counts)
+
+# Total packages processed (all rows)
+total_processed = len(window_df)
+
+# Count defects only (exclude NaN)
+defect_summary = (
+    window_df["defectCategory"]
+    .value_counts(dropna=True)
+    .rename_axis("defectCategory")
+    .reset_index(name="count")
+)
+
+# Percent over total processed
+defect_summary["percentage"] = (defect_summary["count"] / total_processed * 100).round(4)
+print(defect_summary)
+
+# Filter for sortCode 8, 9, and 10 (Scan Defects) using the helper column 'defectCategory'
+scan_defect_df = window_df[window_df['defectCategory'] == "Scan Defect"]
+print("\nBreakdown by Scan Defect:")
+print(f"Found {len(scan_defect_df)} items with sortCode 8, 9, or 10:")
+print(scan_defect_df['defectCategory'].value_counts().sort_index())
+
+# Create a new dataset with just the columns we need
+export_df = scan_defect_df[['indexNo', 'timeStamp', 'sortCode']].copy()
+
+# Exporting to Excel file
+start_str = start_ts.strftime("%Y%m%d-%H%M%S")
+end_str   = end_ts.strftime("%Y%m%d-%H%M%S")
+output_path = f"data/Analysis_SO4_{start_str}_{end_str}.xlsx"
+
+with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
+    wb = writer.book
+    ws = wb.add_worksheet("Analysis_Results")   # type: ignore[attr-defined]
+    bold = wb.add_format({"bold": True})        # type: ignore[attr-defined]
+    
+    # Analysis Summary
+    ws.write("A1", "Analysis Summary", bold)
+    ws.write("A2", "Total records (window dataset):")
+    ws.write_number("B2", total_processed)
+    
+    ws.write("A3", "Time window", bold)
+    ws.write("A4", "StartTime:")
+    ws.write("B4", start_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])  # trim to ms
+    ws.write("A5", "EndTime:")
+    ws.write("B5", end_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
+    
+    # Defect Category Breakdown
+    ws.write("A7", "Defect Category Breakdown (percent over ALL processed)", bold)
+    defect_summary.to_excel(writer, sheet_name="Analysis_Results", startrow=8, startcol=0, index=False)
+
+    # Sort Code Reason Counts
+    start_row_sort = 8 + len(defect_summary) + 3
+    ws.write(start_row_sort - 1, 0, "Sort Code Reason Counts", bold)
+    sort_counts.to_excel(writer, sheet_name="Analysis_Results", startrow=start_row_sort, startcol=0, index=False)
+
+    # Other Sheets
+    raw_df.to_excel(writer, sheet_name="Raw_Data", index=False)
+    clean_df.to_excel(writer, sheet_name="Clean_Data", index=False)
+    window_df.to_excel(writer, sheet_name="Window_Data", index=False)
+    export_df.to_excel(writer, sheet_name="Scan_Defects", index=False)
+
+print(f"\nAnalysis results saved to: {output_path}")
+
