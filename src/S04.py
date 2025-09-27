@@ -173,8 +173,9 @@ parsed_df = pd.concat([temp_df.drop(columns=["rawMessage"]), message_df], axis=1
 # Cleaning DataFrame
 # Get list of columns with only 1 unique value, but preserve "sortCode"
 cols_to_drop = parsed_df.columns[parsed_df.nunique() == 1].tolist()
-if "sortCode" in cols_to_drop:
-    cols_to_drop.remove("sortCode")
+for col in ["sortCode", "indexNo", "timeStamp"]:   # don’t drop sortCode or indexNo
+    if col in cols_to_drop:
+        cols_to_drop.remove(col)
 # Usual Columns Dropped
 # ['flag', 'systemName', 'ipAddress', 'sender', 'unkown', 'unkown_2', 'machineCode', 'unitID', 'event', 'requestedDestStatus', 'comHost', 'comMode', 'telegramType']
 
