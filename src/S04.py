@@ -171,7 +171,7 @@ message_df["sortCode"] = pd.to_numeric(message_df["sortCode"], errors="coerce").
 parsed_df = pd.concat([temp_df.drop(columns=["rawMessage"]), message_df], axis=1)
 
 # Cleaning DataFrame
-# Get list of columns with only 1 unique value, but preserve "sortCode"
+# Get list of columns with only 1 unique value, but preserve "sortCode", "indexNo" and "timeStamp"
 cols_to_drop = parsed_df.columns[parsed_df.nunique() == 1].tolist()
 for col in ["sortCode", "indexNo", "timeStamp"]:   # don’t drop sortCode or indexNo
     if col in cols_to_drop:
