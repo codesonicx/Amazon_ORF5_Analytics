@@ -211,10 +211,30 @@ def parse_datetime_or_time(s, default_date):
         return pd.Timestamp(dt.datetime.combine(default_date, t))
 
 def select_window_cli_24h(df, window_time):
-    s = input("Start (24h or full datetime, e.g. '16:00' or '2025-09-29 16:00'): ").strip()
-    start = parse_datetime_or_time(s, global_start_time)
+    # Build dynamic examples
+    start_example_full = global_start_time.strftime("%Y-%m-%d %H:%M")
+    end_example_full   = global_end_time.strftime("%Y-%m-%d %H:%M")
 
-    e = input(f"End time 24h (or press Enter to use {window_time} min window): ").strip()
+    start_example_time = global_start_time.strftime("%H:%M")
+    end_example_time   = global_end_time.strftime("%H:%M")
+
+    # Start time input
+    s = input(
+        f"Start → Example: '{start_example_time}' (24h format) "
+        f"or '{start_example_full}' (full datetime), "
+        f"or press Enter to use dataset start: "
+    ).strip()
+    if s:  # user entered something
+        start = parse_datetime_or_time(s, global_start_time)
+    else:  # default to dataset start
+        start = global_start_time
+        
+    # End time input
+    e = input(
+        f"End   → Example: '{end_example_time}' (24h format) "
+        f"or '{end_example_full}' (full datetime), "
+        f"or press Enter to use {window_time} min window: "
+    ).strip()
     if e:
         end = parse_datetime_or_time(e, global_end_time)
     else:
