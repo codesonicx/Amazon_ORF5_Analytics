@@ -44,6 +44,14 @@ You can run any script inside the `src/` folder. For example:
   uv run src/SO4.py
   ```
 
+  **S04 is designed for simplicity → minimal user input required.**
+  You just provide the input file, select a time window, and (optionally) a cleanup file for scan defect corrections.
+  The script automatically:
+
+  * Parses and cleans raw logs.
+  * Prompts for a time window (or defaults to dataset start + duration).
+  * Generates Excel reports with charts, defect breakdown, and windowed results.
+
 * **Run PPH (Packages per Hour) analysis**
 
   ```bash
@@ -71,7 +79,8 @@ The scripts will:
 ## ✅ Example Workflow
 
 1. Prepare your **log monitor logs**.
-2. Choose a time window (e.g., 11:05 -> 11:35 '30-minute window').
+2. Choose a time window (e.g., 11:05 → 11:35 for a 30-minute window).
+   Or just press **Enter** twice to let S04 use the dataset start + default duration.
 3. Run the script → Excel reports are exported into the `data/` folder.
 4. Review S04 checks and PPH performance in the generated analysis.
 
