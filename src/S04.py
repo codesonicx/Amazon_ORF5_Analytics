@@ -228,7 +228,7 @@ def select_window_cli_24h(df, window_time):
         start = parse_datetime_or_time(s, global_start_time)
     else:  # default to dataset start
         start = global_start_time
-        
+
     # End time input
     e = input(
         f"End   → Example: '{end_example_time}' (24h format) "
@@ -267,6 +267,7 @@ def select_window_cli_24h(df, window_time):
     print(f"\nWindow: {start} → {end}  ({window_time} min) | Rows: {len(win)}")
     return win, start, end
 
+print("Select time window for analysis:")
 window_df, start_ts, end_ts = select_window_cli_24h(clean_df, WINDOW_TIME)
 
 # Optional cleanup of wrong sortCodes
