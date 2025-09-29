@@ -10,7 +10,7 @@ TARGET_SINGLE_AUTO_PPH = 2820.0
 TARGET_SINGLE_SEMI_AUTO_PPH = 2640.0
 TARGET_ALL_AUTO_PPH = 7351.0 / 3.0
 TARGET_ALL_SEMI_AUTO_PPH = 9119.0 / 4.0
-WINDOW_TIME = 30  # minutes
+TIME_WINDOW = 30  # minutes
 MESSAGE_CODE_FILTER = '54123'  # Items Inducted
 
 # Choose target PPH based on inductions, ignoring others.
@@ -147,7 +147,7 @@ def select_window_cli_24h(df, window_time):
     print(f"\nWindow: {start} → {end}  ({window_time} min) | Rows: {len(win)}")
     return win, start, end
 
-window_df, start_ts, end_ts = select_window_cli_24h(clean_df, WINDOW_TIME)
+window_df, start_ts, end_ts = select_window_cli_24h(clean_df, TIME_WINDOW)
 
 # Drop "SPS001, SPS002" inductions if any
 # This is because we do not have a target PPH for them and its part of another process
