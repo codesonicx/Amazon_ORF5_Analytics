@@ -193,14 +193,32 @@ print(f"Start Time: {global_start_time}")
 print(f"End Time: {global_end_time}")
 print(f"Delta Time: {global_delta_time}\n")
 
-def select_window_cli_24h(df, window_time):
-    s = input("Start time 24h (e.g. 16:00 or 16:00:30 or 16): ").strip()
+def parse_datetime_or_time(s, default_date):
+    """
+    Try to parse user input as full datetime first, 
+    otherwise as a time and combine with default_date.
+    """
     try:
-        t = dt.time.fromisoformat(s)
+        # Try full datetime first
+        return pd.Timestamp(s)
     except ValueError:
-        t = dt.time(int(s), 0, 0)
-    start = pd.Timestamp(dt.datetime.combine(global_start_time.date(), t))
-    end   = start + pd.Timedelta(minutes=window_time)
+        try:
+            # Try time only
+            t = dt.time.fromisoformat(s)
+        except ValueError:
+            # Try simple hour (like '16')
+            t = dt.time(int(s), 0, 0)
+        return pd.Timestamp(dt.datetime.combine(default_date, t))
+
+def select_window_cli_24h(df, window_time):
+    s = input("Start (24h or full datetime, e.g. '16:00' or '2025-09-29 16:00'): ").strip()
+    start = parse_datetime_or_time(s, global_start_time)
+
+    e = input(f"End time 24h (or press Enter to use {window_time} min window): ").strip()
+    if e:
+        end = parse_datetime_or_time(e, global_end_time)
+    else:
+        end = start + pd.Timedelta(minutes=window_time)
 
     # Check if start is before global start time
     if start < global_start_time:
@@ -304,8 +322,6 @@ else:
         if not_found:
             print("IDs not applied (no scan-defect row left):", not_found)
 
-
-
 # Sort Code Analysis
 # Map sortCode to sortReason and defectCategory columns
 window_df["sortReason"] = window_df["sortCode"].map(SORT_CODE_MAP)
@@ -396,7 +412,7 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     chart_pie.set_title({"name": "Defect Breakdown"})
     chart_pie.set_legend({"position": "right"})
 
-    ws.insert_chart(0, 6, chart_pie, {"x_scale": 1.5, "y_scale": 1.5})
+    ws.insert_chart(0, 4, chart_pie, {"x_scale": 1.5, "y_scale": 1.5})
 
     bar_chart = wb.add_chart({"type": "column"})    # type: ignore[attr-defined]
     end_row_sort = start_row_sort + len(sort_counts)
