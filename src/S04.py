@@ -413,6 +413,18 @@ window_df["defectCategory"] = window_df["sortReason"].map(DEFECT_CATEGORY_MAP)
 sort_counts = window_df.groupby("sortReason").size().reset_index(name="count").sort_values(by="count", ascending=False).reset_index(drop=True)
 print(sort_counts)
 
+# Recirculation Packages
+window_df["actualDestMCID"] = pd.to_numeric(window_df["actualDestMCID"], errors="coerce").astype("Int64")
+window_df["requestedDestMCID"] = pd.to_numeric(window_df["requestedDestMCID"], errors="coerce").astype("Int64")
+
+recirc_mask = (
+    ((window_df["actualDestMCID"] == 3001) & (window_df["requestedDestMCID"] == 3002))
+    | ((window_df["actualDestMCID"] == 3002) & (window_df["requestedDestMCID"] == 3001))
+)
+
+recirc_count = recirc_mask.sum()
+print(f"\nRecirculation packages: {recirc_count}\n")
+
 # Total packages processed (all rows)
 total_processed = len(window_df)
 
@@ -478,6 +490,12 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     ws.write(start_row_sort - 1, 0, "Sort Code Reason Counts", bold)
     sort_counts.to_excel(writer, sheet_name="Analysis_Results", startrow=start_row_sort, startcol=0, index=False)
 
+    # Recirculation Packages
+    recirculation_row = start_row_sort + len(sort_counts) + 2
+    ws.write(recirculation_row, 0, "Recirculation Packages", bold)
+    ws.write(recirculation_row + 1, 0, "Count:")
+    ws.write_number(recirculation_row + 1, 1, recirc_count)
+
     # Creating native charts
     chart_pie = wb.add_chart({"type": "pie"})   # type: ignore[attr-defined]
     end_row_def = 8 + len(defect_summary)
@@ -510,7 +528,7 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     bar_chart.set_y_axis({"name": "Number of Items"})
     bar_chart.set_legend({"none": True})
 
-    ws.insert_chart(23, 0, bar_chart, {"x_scale": 1.5, "y_scale": 1.5})
+    ws.insert_chart(25, 0, bar_chart, {"x_scale": 1.5, "y_scale": 1.5})
 
     # Other Sheets
     raw_df.to_excel(writer, sheet_name="Raw_Data", index=False)
@@ -518,4 +536,4 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     window_df.to_excel(writer, sheet_name="Window_Data", index=False)
     export_df.to_excel(writer, sheet_name="Scan_Defects", index=False)
 
-print(f"\nAnalysis results saved to: {output_path}")
+print(f"Analysis results saved to: {output_path}")
