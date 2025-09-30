@@ -71,7 +71,7 @@ def select_file():
     )
 
     return file_path
-
+print("Select a S04 data file (CSV format) from Log Monitor...")
 path = select_file()
 
 raw_df = pd.read_csv(
