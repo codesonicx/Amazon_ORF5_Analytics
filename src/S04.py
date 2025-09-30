@@ -238,7 +238,7 @@ def parse_datetime_or_time(s, default_date):
     except ValueError:
         raise ValueError(f"Could not parse '{s}' as time or datetime")
 
-def select_window_cli_24h(df, window_time):
+def select_window_cli(df, window_time):
     """
     Prompt the user to select a start and end time window for analysis.
 
@@ -330,7 +330,7 @@ def select_window_cli_24h(df, window_time):
     return win, start, end
 
 print("Select time window for analysis:")
-window_df, start_ts, end_ts = select_window_cli_24h(clean_df, WINDOW_TIME)
+window_df, start_ts, end_ts = select_window_cli(clean_df, WINDOW_TIME)
 
 # Optional cleanup of wrong sortCodes
 do_cleanup = input("Do you want to clean up wrong sortCodes using the Excel file? (yes/no): ").strip().lower()
