@@ -5,12 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "ipykernel>=6.30.1",
-    "ipywidgets>=8.1.7",
-    "matplotlib>=3.10.6",
-    "notebook>=7.4.5",
     "numpy>=2.2.6",
     "openpyxl>=3.1.5",
     "pandas>=2.3.2",
     "xlsxwriter>=3.2.9",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.30.1",
+    "matplotlib>=3.10.6",
+    "notebook>=7.4.7",
 ]
