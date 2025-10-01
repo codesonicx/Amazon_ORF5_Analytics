@@ -5,6 +5,8 @@ import csv
 import datetime as dt
 import math
 
+from time_utils import select_window_cli
+
 # Global Constants
 TARGET_SINGLE_AUTO_PPH = 2820.0
 TARGET_SINGLE_SEMI_AUTO_PPH = 2640.0
@@ -102,56 +104,11 @@ clean_df = parsed_df.drop(columns=cols_to_drop)
 # ['timeStamp', 'sender', 'timeStampPLC', 'messageCode', 'sequenceNo', 'event', 'awcsAction', 'plcRecordNo', 'itemID', 'indexNo', 'awcsStateNow', 'awcsStateNew', 'inductionStatus', 'inductionNo', 'carrierNo', 'carrierCount']
 
 # Rate Analysis
-# using time frame window to select a subset of data and preform analysis
-global_start_time = clean_df["timeStamp"].min()
-global_end_time = clean_df["timeStamp"].max()
-global_delta_time = global_end_time - global_start_time
-
-print(f"Start Time: {global_start_time}")
-print(f"End Time: {global_end_time}")
-print(f"Delta Time: {global_delta_time}\n")
-
-def select_window_cli_24h(df, window_time):
-    s = input("Start time 24h (e.g. 16:00 or 16:00:30 or 16): ").strip()
-    try:
-        t = dt.time.fromisoformat(s)
-    except ValueError:
-        t = dt.time(int(s), 0, 0)
-    start = pd.Timestamp(dt.datetime.combine(global_start_time.date(), t))
-    end   = start + pd.Timedelta(minutes=window_time)
-
-    # Check if start is before global start time
-    if start < global_start_time:
-        print(f"⚠️  WARNING: Requested start time ({start}) is before data begins ({global_start_time})")
-        print(f"   → Adjusting start time to data beginning: {global_start_time}")
-        start = global_start_time
-        end = start + pd.Timedelta(minutes=window_time)
-    
-    # Check if end exceeds global end time
-    if end > global_end_time:
-        original_end = end
-        end = global_end_time
-        actual_window_minutes = (end - start).total_seconds() / 60
-        print(f"⚠️  WARNING: Requested end time ({original_end}) exceeds data boundary ({global_end_time})")
-        print(f"   → Adjusting end time to data boundary: {global_end_time}")
-        print(f"   → Actual window duration: {actual_window_minutes:.1f} minutes (requested: {window_time} minutes)")
-    
-    # Additional check: if start is also beyond global_end_time
-    if start > global_end_time:
-        print(f"❌ ERROR: Requested start time ({start}) is after data ends ({global_end_time})")
-        print("   → No data available for this time window")
-        return df.iloc[0:0].copy(), start, end  # Return empty dataframe
-
-    mask  = (df["timeStamp"] >= start) & (df["timeStamp"] <= end)
-    win   = df.loc[mask].copy()
-    print(f"\nWindow: {start} → {end}  ({window_time} min) | Rows: {len(win)}")
-    return win, start, end
-
-window_df, start_ts, end_ts = select_window_cli_24h(clean_df, TIME_WINDOW)
+window_df, start_ts, end_ts = select_window_cli(clean_df, TIME_WINDOW)
 
 # Drop "SPS001, SPS002" inductions if any
 # This is because we do not have a target PPH for them and its part of another process
-window_df = window_df[~window_df["inductionNo"].isin(SPS_NAMES)]
+# window_df = window_df[~window_df["inductionNo"].isin(SPS_NAMES)]
 
 # Get unique induction numbers available in the window data
 available_inductions = window_df["inductionNo"].dropna().unique()
@@ -162,7 +119,7 @@ for val in available_inductions_sorted:
     print(f"  - {val}")
 
 def choose_target_pph(inductions_iterable):
-    inds = [i for i in inductions_iterable if i in SEMI or i in AUTO]
+    inds = [i for i in inductions_iterable if i in SEMI or i in AUTO or i in SPS_NAMES]
     u = set(inds)
     if not u:
         return None # no valid inductions found
@@ -172,8 +129,11 @@ def choose_target_pph(inductions_iterable):
 
     if u.issubset(AUTO):
         return TARGET_SINGLE_AUTO_PPH if len(u) == 1 else TARGET_ALL_AUTO_PPH
+    
+    if u.issubset(SPS_NAMES):
+        return 100
 
-    return None  # mixed groups -> no target
+    return (TARGET_ALL_SEMI_AUTO_PPH + TARGET_ALL_AUTO_PPH) / 2  # Mixed group -> use average of group targets
 
 target_pph = choose_target_pph(available_inductions)
 
