@@ -5,6 +5,8 @@ import csv
 import datetime as dt
 import os
 
+from time_utils import select_window_cli
+
 # Global Constants
 TARGET_SCAN_DEFECT_NO_CROSSBELT = 0.01
 TARGET_SCAN_DEFECT_WITH_CROSSBELT = 0.005
@@ -192,142 +194,6 @@ global_delta_time = global_end_time - global_start_time
 print(f"Start Time: {global_start_time}")
 print(f"End Time: {global_end_time}")
 print(f"Delta Time: {global_delta_time}\n")
-
-def parse_datetime_or_time(s, default_date):
-    """
-    Parse a string into a pandas.Timestamp.
-
-    Supports:
-    - Time only (e.g. "16:00" → combined with default_date)
-    - Hour only (e.g. "16" → 16:00:00 on default_date)
-    - Full datetime (e.g. "2025-09-24 16:00")
-
-    Raises ValueError if parsing fails.
-
-    Parameters
-    ----------
-    s : str
-        The user input string (could be time-only, hour-only, or full datetime).
-    default_date : datetime-like
-        A reference datetime from which the date component will be used when
-        `s` contains only a time or hour.
-
-    Returns
-    -------
-    pd.Timestamp
-        A timestamp object combining the parsed time (or datetime) with the
-        appropriate date context.
-    """
-    # Try time-only input like "HH:MM" or "HH:MM:SS"
-    try:
-        t = dt.time.fromisoformat(s)
-        return pd.Timestamp(dt.datetime.combine(default_date.date(), t))
-    except ValueError:
-        pass
-    
-    # Try simple hour like '16'
-    try:
-        t = dt.time(int(s), 0, 0)
-        return pd.Timestamp(dt.datetime.combine(default_date.date(), t))
-    except (ValueError, TypeError):
-        pass
-    
-     # Try full datetime string like "YYYY-MM-DD HH:MM:SS"
-    try:
-        return pd.Timestamp(s)
-    except ValueError:
-        raise ValueError(f"Could not parse '{s}' as time or datetime")
-
-def select_window_cli(df, window_time):
-    """
-    Prompt the user to select a start and end time window for analysis.
-
-    The function accepts user input as either a full datetime or a time-only
-    value. If no input is given, defaults to the dataset start and a window
-    of `window_time` minutes. Boundaries are automatically adjusted if the
-    requested window falls outside the dataset.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Dataset containing a 'timeStamp' column.
-    window_time : int
-        Default duration (in minutes) if no end time is provided.
-
-    Returns
-    -------
-    win : pandas.DataFrame
-        Subset of df within the selected window.
-    start : pd.Timestamp
-        Resolved start time.
-    end : pd.Timestamp
-        Resolved end time.
-    """
-    # Build example inputs for the user prompt based on dataset range
-    start_example_full = global_start_time.strftime("%Y-%m-%d %H:%M")
-    end_example_full   = global_end_time.strftime("%Y-%m-%d %H:%M")
-    start_example_time = global_start_time.strftime("%H:%M")
-    end_example_time   = global_end_time.strftime("%H:%M")
-
-    # Get start time from user
-    s = input(
-        f"Start → Example: '{start_example_time}' (24h format) "
-        f"or '{start_example_full}' (full datetime), "
-        f"or press Enter to use dataset start: "
-    ).strip()
-    
-    if s:
-        # Use the oldest date from dataset when parsing time-only input
-        start = parse_datetime_or_time(s, global_start_time)
-    else:  # default to dataset start
-        start = global_start_time
-
-    # Check and correct start time boundaries
-    if start < global_start_time:
-        print(f"⚠️  WARNING: Requested start time ({start}) is before data begins ({global_start_time})")
-        print(f"   → Adjusting start time to data beginning: {global_start_time}")
-        start = global_start_time
-    
-    if start > global_end_time:
-        print(f"❌ ERROR: Requested start time ({start}) is after data ends ({global_end_time})")
-        print("   → No data available for this time window")
-        return df.iloc[0:0].copy(), start, start  # Return empty dataframe
-
-    # Get end time from user
-    e = input(
-        f"End   → Example: '{end_example_time}' (24h format) "
-        f"or '{end_example_full}' (full datetime), "
-        f"or press Enter to use {window_time} min window: "
-    ).strip()
-    
-    if e:
-        # User provided an end time - parse it using the corrected start date
-        end = parse_datetime_or_time(e, start)
-    else:
-        # No input - use start time + window
-        end = start + pd.Timedelta(minutes=window_time)
-
-    # Check and correct end time boundaries
-    if end > global_end_time:
-        original_end = end
-        end = global_end_time
-        actual_window_minutes = (end - start).total_seconds() / 60
-        print(f"⚠️  WARNING: Requested end time ({original_end}) exceeds data boundary ({global_end_time})")
-        print(f"   → Adjusting end time to data boundary: {global_end_time}")
-        print(f"   → Actual window duration: {actual_window_minutes:.1f} minutes (requested: {window_time} minutes)")
-    
-    # Prevent invalid windows
-    if end < start:
-        print(f"❌ ERROR: End time ({end}) is before start time ({start})")
-        print("   → No valid time window")
-        return df.iloc[0:0].copy(), start, end
-
-    # Filter dataframe within the window
-    mask = (df["timeStamp"] >= start) & (df["timeStamp"] <= end)
-    win = df.loc[mask].copy()
-    actual_duration = (end - start).total_seconds() / 60
-    print(f"\nWindow: {start} → {end}  ({actual_duration:.1f} min) | Rows: {len(win)}")
-    return win, start, end
 
 print("Select time window for analysis:")
 window_df, start_ts, end_ts = select_window_cli(clean_df, WINDOW_TIME)
