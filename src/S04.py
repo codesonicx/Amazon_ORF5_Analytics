@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import filedialog
 import pandas as pd
 import csv
-import datetime as dt
 import os
 
 from time_utils import select_window_cli
