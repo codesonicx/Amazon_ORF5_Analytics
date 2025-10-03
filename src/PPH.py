@@ -1,11 +1,10 @@
-import tkinter as tk
-from tkinter import filedialog
 import pandas as pd
 import csv
 import math
 import os
 
-from time_utils import select_window_cli
+from utils.file_picker import select_file
+from utils.time_frame import select_window_cli
 
 # Global Constants
 TARGET_SINGLE_AUTO_PPH = 2820.0
@@ -19,17 +18,6 @@ MESSAGE_CODE_FILTER = '54123'  # Items Inducted
 SEMI = {"IU001", "IU002", "IU003", "IU004"}
 AUTO = {"IU005", "IU006", "IU007"}
 SPS_NAMES = {"SPS001", "SPS002"}
-
-def select_file():
-    root = tk.Tk()
-    root.withdraw()  # Hide the root window
-    file_path = filedialog.askopenfilename(
-        title="Select CSV File",
-        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-    )
-
-    root.destroy()  # Close the Tkinter instance
-    return file_path
 
 path = select_file()
 

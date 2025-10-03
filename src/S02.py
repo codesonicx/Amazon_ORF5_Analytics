@@ -1,28 +1,14 @@
-import tkinter as tk
-from tkinter import filedialog
 import pandas as pd
 import csv
 import os
 
-from time_utils import select_window_cli
+from utils.file_picker import select_file
+from utils.time_frame import select_window_cli
 
 # Global Constants
 WINDOW_TIME = 30  # minutes
 MESSAGE_CODE_FILTER = '54163'  # Items Inducted
 
-def select_file():
-    root = tk.Tk()
-    root.withdraw()  # Hide the root window
-    file_path = filedialog.askopenfilename(
-        title="Select File",
-        filetypes=[
-            ("CSV files", "*.csv"),
-            ("Excel files", "*.xlsx;*.xls"),
-            ("All files", "*.*"),
-        ]
-    )
-
-    return file_path
 print("Select a S02 data file (CSV format) from Log Monitor...")
 path = select_file()
 
