@@ -393,8 +393,10 @@ def normalize_lists(row, target_cols):
     return row
 
 parsed_df = parsed_df.apply(normalize_lists, axis=1, target_cols=columns_with_arrays)
-
 parsed_df = parsed_df.explode(column=columns_with_arrays, ignore_index=True)    # type: ignore[arg-type]
+
+# Drop rows that contain -1 in of the exploded columns
+parsed_df = parsed_df[~parsed_df[columns_with_arrays].isin([-1]).any(axis=1)]
 
 # Cleaning DataFrame
 # Get list of columns with only 1 unique value, but preserve "sortCode", "indexNo" and "timeStamp"
@@ -514,24 +516,30 @@ reason_dest_pivot = reason_dest_summary.pivot_table(
 ).reset_index()
 
 # Unique Packages and Recirculation Analysis
-# Unique packages (distinct barcodes)
-unique_packages = window_df["barcodeAWCS"].nunique()
-# Count occurrences of each barcode
-barcode_counts = window_df["barcodeAWCS"].value_counts()
-# Recirculating packages (those that appear more than once)
-recirc_packages = barcode_counts[barcode_counts > 1]
-# Number of unique packages that recirculated
-recirc_unique_packages = len(recirc_packages)
-
-# Total recirculation events (extra passes beyond the first)
-recirc_events = (recirc_packages - 1).sum()
-
-print(f"Unique packages processed: {unique_packages}")
-print(f"Packages that recirculated (unique barcodes): {recirc_unique_packages}")
-print(f"Total recirculation events (extra scans): {recirc_events}")
-
 # Total packages processed (all rows)
 total_processed = len(window_df)
+
+# Total unique barcodes
+total_unique_packages = window_df["barcodeAWCS"].nunique()
+
+# Count occurrences of each barcode
+counts = window_df["barcodeAWCS"].value_counts()
+recirculation_packages = (counts > 1).sum()
+# Recirculation = barcodes that appear more than once
+recirculation_records = counts[counts > 1].sum()
+
+# Non-recirculation = barcodes that appear only once
+non_recirculation_records = counts[counts == 1].sum()
+
+print("Total records:", total_processed)
+print("Total unique packages:", total_unique_packages)
+print("Total recirculation packages:", recirculation_records)
+print("Total non-recirculation packages:", non_recirculation_records)
+
+print("\nHow many barcodes appear exactly once:", (counts == 1).sum())
+print("How many barcodes appear more than once:", (counts > 1).sum())
+print("Max occurrences for a single barcode:", counts.max())
+print("Min occurrences for a single barcode:", counts.min())
 
 # Count defects only (exclude NaN)
 defect_summary = (
@@ -579,37 +587,48 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     ws.write("A1", "Analysis Summary", bold)
     ws.write("A2", "Total records (window dataset):")
     ws.write_number("B2", total_processed)
-    ws.write_number("C2", unique_packages)
-    
-    ws.write("A3", "Time window", bold)
-    ws.write("A4", "StartTime:")
-    ws.write("B4", start_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])  # trim to ms
-    ws.write("A5", "EndTime:")
-    ws.write("B5", end_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
+    ws.write("A3", "Total processed packages:")
+    ws.write_number("B3", total_unique_packages)
+    ws.write("A4", "Total truly one-off packages:")
+    ws.write_number("B4", non_recirculation_records)
+    ws.write("A5", "Total recirculation packages:")
+    ws.write_number("B5", recirculation_packages)
+    ws.write("A6", "Total recirculation records:")
+    ws.write_number("B6", recirculation_records)
+
+    ws.write("A8", "Time window", bold)
+    ws.write("A9", "StartTime:")
+    ws.write("B9", start_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])  # trim to ms
+    ws.write("A10", "EndTime:")
+    ws.write("B10", end_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
     
     # Defect Category Breakdown
-    ws.write("A7", "Defect Category Breakdown (percent over ALL processed)", bold)
-    defect_summary.to_excel(writer, sheet_name="Analysis_Results", startrow=8, startcol=0, index=False)
+    ws.write("A12", "Defect Category Breakdown (percent over ALL processed)", bold)
+    defect_summary.to_excel(writer, sheet_name="Analysis_Results", startrow=12, startcol=0, index=False)
 
     # Sort Code Reason Counts
-    start_row_sort = 8 + len(defect_summary) + 3
+    start_row_sort = 12 + len(defect_summary) + 3
     ws.write(start_row_sort - 1, 0, "Sort Code Reason Counts", bold)
     sort_counts.to_excel(writer, sheet_name="Analysis_Results", startrow=start_row_sort, startcol=0, index=False)
 
-    # Recirculation Packages
-    recirculation_row = start_row_sort + len(sort_counts) + 2
-    ws.write(recirculation_row, 0, "Recirculation Packages", bold)
-    ws.write(recirculation_row + 1, 0, "Count:")
-    ws.write_number(recirculation_row + 1, 1, recirc_unique_packages)
+    # SortReason vs RequestedDestMCID
+    ws.write(29, 0, "SortReason vs RequestedDestMCID", bold)
+    reason_dest_pivot.to_excel(
+        writer,
+        sheet_name="Analysis_Results",
+        startrow=30,
+        startcol=0,
+        index=False
+    )
 
     # Creating native charts
     chart_pie = wb.add_chart({"type": "pie"})   # type: ignore[attr-defined]
-    end_row_def = 8 + len(defect_summary)
+    end_row_def = 12 + len(defect_summary)
 
     chart_pie.add_series({
         "name": "Defect Category Breakdown",
-        "categories": ["Analysis_Results", 9, 0, end_row_def, 0],   # defectCategory
-        "values": ["Analysis_Results", 9, 1, end_row_def, 1],       # count column
+        "categories": ["Analysis_Results", 13, 0, end_row_def, 0],   # defectCategory
+        "values": ["Analysis_Results", 13, 1, end_row_def, 1],       # count column
         "data_labels": {
             "percentage": True,
             "num_format": "0.0%",
@@ -634,17 +653,34 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     bar_chart.set_y_axis({"name": "Number of Items"})
     bar_chart.set_legend({"none": True})
 
-    ws.insert_chart(25, 0, bar_chart, {"x_scale": 1.5, "y_scale": 1.5})
+    ws.insert_chart(0, 16, bar_chart, {"x_scale": 1.5, "y_scale": 1.5})
 
-    start_row_pivot = 12 + len(reason_dest_summary) + 3
-    ws.write(start_row_pivot - 1, 0, "SortReason vs RequestedDestMCID", bold)
-    reason_dest_pivot.to_excel(
-        writer,
-        sheet_name="Analysis_Results",
-        startrow=start_row_pivot,
-        startcol=0,
-        index=False
-    )
+    # Define pivot table location
+    start_row_pivot = 30
+    start_col_pivot = 0
+    end_row_pivot = start_row_pivot + len(reason_dest_pivot)
+    end_col_pivot = start_col_pivot + len(reason_dest_pivot.columns) - 1
+
+    # Create a stacked column chart
+    stack_chart = wb.add_chart({"type": "column", "subtype": "stacked"})    # type: ignore[attr-defined]
+
+    # Loop over each Amazon chute (row of pivot table, skip header row)
+    for r in range(start_row_pivot + 1, end_row_pivot + 1):
+        stack_chart.add_series({
+            "name":       ["Analysis_Results", r, start_col_pivot],  # Amazon chute name
+            "categories": ["Analysis_Results", start_row_pivot, start_col_pivot + 1,
+                        start_row_pivot, end_col_pivot],          # SortReason labels (header row)
+            "values":     ["Analysis_Results", r, start_col_pivot + 1,
+                        r, end_col_pivot],                        # Counts across SortReasons
+        })
+
+    # Format chart
+    stack_chart.set_title({"name": "Amazon Induction vs SortReason"})
+    stack_chart.set_x_axis({"name": "SortReason"})
+    stack_chart.set_y_axis({"name": "Count"})
+    stack_chart.set_legend({"position": "bottom"})
+    
+    ws.insert_chart(start_row_pivot + len(reason_dest_pivot) + 1, 0, stack_chart, {"x_scale": 8, "y_scale": 3})
 
     # Other Sheets
     raw_df.to_excel(writer, sheet_name="Raw_Data", index=False)
