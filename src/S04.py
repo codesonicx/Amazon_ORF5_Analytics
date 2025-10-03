@@ -612,11 +612,11 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     sort_counts.to_excel(writer, sheet_name="Analysis_Results", startrow=start_row_sort, startcol=0, index=False)
 
     # SortReason vs RequestedDestMCID
-    ws.write(29, 0, "SortReason vs RequestedDestMCID", bold)
+    ws.write(30, 0, "SortReason vs RequestedDestMCID", bold)
     reason_dest_pivot.to_excel(
         writer,
         sheet_name="Analysis_Results",
-        startrow=30,
+        startrow=31,
         startcol=0,
         index=False
     )
@@ -656,7 +656,7 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     ws.insert_chart(0, 16, bar_chart, {"x_scale": 1.5, "y_scale": 1.5})
 
     # Define pivot table location
-    start_row_pivot = 30
+    start_row_pivot = 31
     start_col_pivot = 0
     end_row_pivot = start_row_pivot + len(reason_dest_pivot)
     end_col_pivot = start_col_pivot + len(reason_dest_pivot.columns) - 1
@@ -679,7 +679,7 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     stack_chart.set_x_axis({"name": "SortReason"})
     stack_chart.set_y_axis({"name": "Count"})
     stack_chart.set_legend({"position": "bottom"})
-    
+
     ws.insert_chart(start_row_pivot + len(reason_dest_pivot) + 1, 0, stack_chart, {"x_scale": 8, "y_scale": 3})
 
     # Other Sheets
