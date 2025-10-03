@@ -3,6 +3,7 @@ from tkinter import filedialog
 import pandas as pd
 import csv
 import math
+import os
 
 from time_utils import select_window_cli
 
@@ -236,16 +237,17 @@ else:
         })
 
         # Export results to Excel
-        file_name = f"ratePPH_{start_ts:%Y%m%d-%H%M%S}_{end_ts:%Y%m%d-%H%M%S}.xlsx"
+        os.makedirs("data", exist_ok=True)
+        file_path = f"ratePPH_{start_ts:%Y%m%d-%H%M%S}_{end_ts:%Y%m%d-%H%M%S}.xlsx"
         rate_analysis_df = pd.DataFrame(rows)
 
-        with pd.ExcelWriter(file_name, engine="xlsxwriter") as writer:
+        with pd.ExcelWriter(file_path, engine="xlsxwriter") as writer:
             rate_analysis_df.to_excel(writer, sheet_name="rate_analysis", index=False)
             raw_df.to_excel(writer, sheet_name="raw_data", index=False)
             clean_df.to_excel(writer, sheet_name="clean_data", index=False)
             window_df.to_excel(writer, sheet_name="window_data", index=False)
 
-        print("Saved:", file_name)
+        print("Saved:", file_path)
         print("\nAnalysis Results:")
         for _, row in rate_analysis_df.iterrows():
             print(f"{row['line_name']}: {row['n_items']} items, {row['pph_window']:.1f} PPH "
