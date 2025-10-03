@@ -3,6 +3,7 @@ from tkinter import filedialog
 import pandas as pd
 import csv
 import os
+import ast
 
 from time_utils import select_window_cli
 
@@ -145,15 +146,14 @@ def parse_row(text):
 
     return parsed_dict
 
-def first_element(val):
-    """Extract the first element from a string representation of a list."""
+def parse_list(val):
+    """Convert a string representation of a list into an actual Python list."""
     if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
-        raw_elements = val.strip("[]").split(",")  # Break into parts
-        parts = []
-        for element in raw_elements:
-            parts.append(element.strip())          # Clean whitespace and collect
-        return parts[0] if parts else val          # Return first element if available
-    return val
+        try:
+            return ast.literal_eval(val)  # Safely evaluate the string to a Python list
+        except (ValueError, SyntaxError):
+            return []                     # Return empty list on error
+    return [val]    # Fallback: wrap non-list in a list
 
 # Message Column parsing
 temp_df["rawMessage"] = temp_df["rawMessage"].str.removeprefix("->{").str.removesuffix("}<")
@@ -161,15 +161,26 @@ temp_df["rawMessage"] = temp_df["rawMessage"].str.removeprefix("->{").str.remove
 # Keeping in mind that some values are lists enclosed in [ ]
 message_df = temp_df["rawMessage"].apply(parse_row).apply(pd.Series)
 # Extract first element from list-like values
-special_columns = ["requestedDestMCID", "sortCode", "requestedDestStatus"]
-for col in special_columns:
-    message_df[col] = message_df[col].apply(first_element)
-
-# Convert sortCode to integer (nullable type)
-message_df["sortCode"] = pd.to_numeric(message_df["sortCode"], errors="coerce").astype("Int64")
+columns_with_arrays = ["requestedDestMCID", "sortCode", "requestedDestStatus"]
+for col in columns_with_arrays:
+    message_df[col] = message_df[col].apply(parse_list)
 
 # Join parsed message columns with the base dataframe
 parsed_df = pd.concat([temp_df.drop(columns=["rawMessage"]), message_df], axis=1)
+
+def normalize_lists(row, target_cols):
+    max_len = max(len(row[c]) if isinstance(row[c], list) else 0 for c in target_cols)
+    for c in target_cols:
+        if not isinstance(row[c], list):
+            row[c] = [row[c]]
+        if len(row[c]) < max_len:
+            filler = -1 if c != "requestedDestStatus" else "Unused"
+            row[c] = row[c] + [filler] * (max_len - len(row[c]))
+    return row
+
+parsed_df = parsed_df.apply(normalize_lists, axis=1, target_cols=columns_with_arrays)
+
+parsed_df = parsed_df.explode(column=columns_with_arrays, ignore_index=True)    # type: ignore[arg-type]
 
 # Cleaning DataFrame
 # Get list of columns with only 1 unique value, but preserve "sortCode", "indexNo" and "timeStamp"
@@ -185,15 +196,6 @@ clean_df = parsed_df.drop(columns=cols_to_drop)
 # ['timeStamp', 'PLCTimeStamp', 'sequenceNo', 'plcRecordNo', 'itemID', 'indexNo', 'locationAWCS', 'barcodeAWCS', 'actualDestMCID', 'requestedDestMCID', 'sortCode']
 
 # Rate Analysis
-# using time frame window to select a subset of data and preform analysis
-global_start_time = clean_df["timeStamp"].min()
-global_end_time = clean_df["timeStamp"].max()
-global_delta_time = global_end_time - global_start_time
-
-print(f"Start Time: {global_start_time}")
-print(f"End Time: {global_end_time}")
-print(f"Delta Time: {global_delta_time}\n")
-
 print("Select time window for analysis:")
 window_df, start_ts, end_ts = select_window_cli(clean_df, WINDOW_TIME)
 
@@ -278,17 +280,53 @@ window_df["defectCategory"] = window_df["sortReason"].map(DEFECT_CATEGORY_MAP)
 sort_counts = window_df.groupby("sortReason").size().reset_index(name="count").sort_values(by="count", ascending=False).reset_index(drop=True)
 print(sort_counts)
 
-# Recirculation Packages
-window_df["actualDestMCID"] = pd.to_numeric(window_df["actualDestMCID"], errors="coerce").astype("Int64")
-window_df["requestedDestMCID"] = pd.to_numeric(window_df["requestedDestMCID"], errors="coerce").astype("Int64")
-
-recirc_mask = (
-    ((window_df["actualDestMCID"] == 3001) & (window_df["requestedDestMCID"] == 3002))
-    | ((window_df["actualDestMCID"] == 3002) & (window_df["requestedDestMCID"] == 3001))
+# Read mapping file, force Buemer to string
+map_df = pd.read_excel(
+    r"C:\Users\joacosta\Work\Beumer\NortFord\Python\ORF5\data\Conventions\chutes_name_mapping.xlsx",
+    dtype={"Buemer": str, "Amazon": str}
 )
 
-recirc_count = recirc_mask.sum()
-print(f"\nRecirculation packages: {recirc_count}\n")
+# Build dictionary with string keys
+map_dict = dict(zip(map_df["Buemer"], map_df["Amazon"]))
+
+# Ensure requestedDestMCID is string before mapping
+window_df["Amazon_Destination"] = window_df["requestedDestMCID"].astype(str).apply(
+    lambda x: map_dict.get(x, f"BeumerName:{x}")
+)
+
+# Breakdown of sortReason vs Amazon_Destination
+reason_dest_summary = (
+    window_df.groupby(["sortReason", "Amazon_Destination"])
+    .size()
+    .reset_index(name="count")
+    .sort_values(by=["sortReason", "count"], ascending=[True, False])
+    .reset_index(drop=True)
+)
+
+# SortReason vs Amazon_Destination (pivot table)
+reason_dest_pivot = reason_dest_summary.pivot_table(
+    index="sortReason",
+    columns="Amazon_Destination",
+    values="count",
+    fill_value=0
+).reset_index()
+
+# ---- Unique Packages and Recirculation Analysis ----
+# Unique packages (distinct barcodes)
+unique_packages = window_df["barcodeAWCS"].nunique()
+# Count occurrences of each barcode
+barcode_counts = window_df["barcodeAWCS"].value_counts()
+# Recirculating packages (those that appear more than once)
+recirc_packages = barcode_counts[barcode_counts > 1]
+# Number of unique packages that recirculated
+recirc_unique_packages = len(recirc_packages)
+
+# Total recirculation events (extra passes beyond the first)
+recirc_events = (recirc_packages - 1).sum()
+
+print(f"Unique packages processed: {unique_packages}")
+print(f"Packages that recirculated (unique barcodes): {recirc_unique_packages}")
+print(f"Total recirculation events (extra scans): {recirc_events}")
 
 # Total packages processed (all rows)
 total_processed = len(window_df)
@@ -339,6 +377,7 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     ws.write("A1", "Analysis Summary", bold)
     ws.write("A2", "Total records (window dataset):")
     ws.write_number("B2", total_processed)
+    ws.write_number("C2", unique_packages)
     
     ws.write("A3", "Time window", bold)
     ws.write("A4", "StartTime:")
@@ -359,7 +398,7 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
     recirculation_row = start_row_sort + len(sort_counts) + 2
     ws.write(recirculation_row, 0, "Recirculation Packages", bold)
     ws.write(recirculation_row + 1, 0, "Count:")
-    ws.write_number(recirculation_row + 1, 1, recirc_count)
+    ws.write_number(recirculation_row + 1, 1, recirc_unique_packages)
 
     # Creating native charts
     chart_pie = wb.add_chart({"type": "pie"})   # type: ignore[attr-defined]
@@ -395,9 +434,19 @@ with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
 
     ws.insert_chart(25, 0, bar_chart, {"x_scale": 1.5, "y_scale": 1.5})
 
+    start_row_pivot = 12 + len(reason_dest_summary) + 3
+    ws.write(start_row_pivot - 1, 0, "SortReason vs RequestedDestMCID", bold)
+    reason_dest_pivot.to_excel(
+        writer,
+        sheet_name="Analysis_Results",
+        startrow=start_row_pivot,
+        startcol=0,
+        index=False
+    )
+
     # Other Sheets
-    raw_df.to_excel(writer, sheet_name="Raw_Data", index=False)
-    clean_df.to_excel(writer, sheet_name="Clean_Data", index=False)
+    #raw_df.to_excel(writer, sheet_name="Raw_Data", index=False)
+    #clean_df.to_excel(writer, sheet_name="Clean_Data", index=False)
     window_df.to_excel(writer, sheet_name="Window_Data", index=False)
     export_df.to_excel(writer, sheet_name="Scan_Defects", index=False)
 
