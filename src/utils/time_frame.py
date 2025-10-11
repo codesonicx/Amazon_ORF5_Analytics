@@ -80,6 +80,11 @@ def select_window_cli(df, window_time):
     """
     global_start_time, global_end_time = retrieve_global_time_bounds(df)
 
+    choice = input("Type 'Full' to scan the entire dataset, or press Enter to define a time window: ").strip().lower()
+    if choice == "full":
+        print(f"\n⚡ Using the full dataset: {global_start_time} → {global_end_time} | Rows: {len(df)}")
+        return df.copy(), global_start_time, global_end_time
+
     # Build example inputs for the user prompt
     start_example_full = global_start_time.strftime("%Y-%m-%d %H:%M")
     end_example_full   = global_end_time.strftime("%Y-%m-%d %H:%M")
