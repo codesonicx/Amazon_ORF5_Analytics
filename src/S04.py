@@ -12,12 +12,19 @@ from config import (WINDOW_TIME, MESSAGE_CODE_FILTER, SORT_CODE_MAP, DEFECT_CATE
 print("Select a S04 data file (CSV format) from Log Monitor...")
 path = select_file()
 
+with open(path, "rb") as f:
+    data = f.read().replace(b"\x00", b"")  # strip NUL bytes
+
+with open(path, "wb") as f:   # overwrite same file
+    f.write(data)
+
 raw_df = pd.read_csv(
     path,
-    sep=";",
+    sep=";",                   # only split on ;
     header=None,
     engine="python",
-    quoting=csv.QUOTE_NONE,
+    quoting=csv.QUOTE_NONE,    # ignore broken quotes
+    escapechar="\\",           # prevent errors with backslash
     skipinitialspace=True,
     on_bad_lines="skip",
     dtype=str
@@ -125,7 +132,7 @@ parsed_df = parsed_df[~parsed_df[columns_with_arrays].isin([-1]).any(axis=1)]
 # Cleaning DataFrame
 # Get list of columns with only 1 unique value, but preserve "sortCode", "indexNo" and "timeStamp"
 cols_to_drop = parsed_df.columns[parsed_df.nunique() == 1].tolist()
-for col in ["sortCode", "indexNo", "timeStamp"]:   # don’t drop sortCode or indexNo
+for col in ["sortCode", "indexNo", "timeStamp", "barcodeAWCS"]:   # don’t drop sortCode or indexNo
     if col in cols_to_drop:
         cols_to_drop.remove(col)
 # Usual Columns Dropped
