@@ -214,7 +214,8 @@ else:
 # Mapping columns to have human-readable values
 window_df["sortReason"] = window_df["sortCode"].map(SORT_CODE_MAP)
 window_df["defectCategory"] = window_df["sortReason"].map(DEFECT_CATEGORY_MAP)
-window_df["Amazon_Destination"] = window_df["requestedDestMCID"].map(MAP_BEUMER_TO_AMAZON)
+map_series = window_df["requestedDestMCID"].map(MAP_BEUMER_TO_AMAZON)
+window_df["Amazon_Destination"] = map_series.apply(lambda x: x["amazon"] if isinstance(x, dict) else None)
 
 # Scan Analysis
 # Identify No Reads (all ?)
