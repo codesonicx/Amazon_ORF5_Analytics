@@ -1,5 +1,6 @@
 import ast
 import os
+from typing import Optional
 
 import pandas as pd
 
@@ -164,7 +165,7 @@ def drop_constant_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df[keep_cols].copy()
 
 
-def load_mapping(path: str) -> dict:
+def load_mapping(path: Optional[str] = None) -> dict:
     """Load and clean chute mapping file into dictionary."""
     df = load_data(path)
     # Strip quotes/spaces just in case
@@ -602,10 +603,10 @@ def export_to_excel(results: dict) -> None:
         )
 
         # Extra Sheets
-        results["parsed_df"].to_excel(writer, sheet_name="Raw_Data", index=False)
+        results["interim_df"].to_excel(writer, sheet_name="Raw_Data", index=False)
+        results["parsed_df"].to_excel(writer, sheet_name="Parsed_Data", index=False)
         results["window_df"].to_excel(writer, sheet_name="Window_Data", index=False)
         results["scan_defects"].to_excel(writer, sheet_name="Scan_Defects", index=False)
-        results["test_df"].to_excel(writer, sheet_name="Test_Parsed_Data", index=False)
 
     print(f"Analysis results saved to: {output_path}")
 
@@ -626,7 +627,8 @@ def main():
     window_df, start_ts, end_ts = select_window_cli(clean_df, WINDOW_TIME)
 
     print("\nExtracting Mapping Destination Names from Excel...")
-    mapping_destination_names = load_mapping(r"data\SAT9_Destination_Mapping.xlsx")
+    # mapping_destination_names = load_mapping(r"data\SAT9_Destination_Mapping.xlsx")
+    mapping_destination_names = load_mapping()
 
     print("\nEnriching data with mappings...")
     window_df = enrich_window_df(window_df, mapping_destination_names)
@@ -658,7 +660,7 @@ def main():
         # Metadata
         "start_ts": start_ts,
         "end_ts": end_ts,
-        "S04_processed": window_df.shape[0],
+        "S04_processed": interim_df.shape[0],
         "package_processed": window_df["RealPackageID"].nunique(),
         "unique_packages": scanner_df.loc[
             scanner_df["metric"] == "total_packages", "count"
@@ -681,7 +683,7 @@ def main():
         "scan_defects": window_df[window_df["sortCode"].isin([8, 9, 10])][
             ["indexNo", "timeStamp", "sortCode"]
         ].copy(),
-        "test_df": interim_df,
+        "interim_df": interim_df,
     }
 
     export_to_excel(analysis_results)
