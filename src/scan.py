@@ -354,7 +354,11 @@ def sort_code_metrics(df: pd.DataFrame) -> dict:
     df = df.copy()
 
     # Define recirculation mask (garbage condition)
-    recirc_mask = (df["sortCode"] == 0) & (df["requestedDestMCID"].isin([3001, 3002]))
+    recirc_mask = (df["sortCode"] == 0) & (
+        df["requestedDestMCID"].isin(
+            [3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009, 3010]
+        )
+    )
 
     # Detect recirculation before dropping
     dup_mask = df.duplicated("RealPackageID", keep=False)
