@@ -1,9 +1,8 @@
 import pandas as pd
-import csv
 import math
 import os
 
-from utils.file_picker import select_file
+from src.utils.data_loader import load_data
 from utils.time_frame import select_window_cli
 
 # Global Constants
@@ -19,18 +18,7 @@ SEMI = {"IU001", "IU002", "IU003", "IU004"}
 AUTO = {"IU005", "IU006", "IU007"}
 SPS_NAMES = {"SPS001", "SPS002"}
 
-path = select_file()
-
-raw_df = pd.read_csv(
-    path,
-    sep=";",
-    header=None,
-    engine="python",
-    quoting=csv.QUOTE_NONE,
-    skipinitialspace=True,
-    on_bad_lines="skip",
-    dtype=str
-)
+raw_df = load_data()
 
 # Parsing raw data
 temp_df = raw_df.replace('"', '',regex=True)        # Remove all double quotes
