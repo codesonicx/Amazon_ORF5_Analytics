@@ -463,11 +463,11 @@ def jackpot_metrics(df: pd.DataFrame) -> int:
 
 
 def export_to_excel(results: dict) -> None:
-    os.makedirs("data", exist_ok=True)
+    os.makedirs("data/reports", exist_ok=True)
 
     start_str = results["start_ts"].strftime("%Y%m%d-%H%M%S")
     end_str = results["end_ts"].strftime("%Y%m%d-%H%M%S")
-    output_path = f"data/Analysis_SO4_{start_str}_{end_str}.xlsx"
+    output_path = f"data/reports/Analysis_SO4_{start_str}_{end_str}.xlsx"
 
     print("\nExporting analysis results to Excel file...")
 
