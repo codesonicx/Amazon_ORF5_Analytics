@@ -6,7 +6,7 @@ import pandas as pd
 # Global Constants
 from config import (
     DEFECT_CATEGORY_MAP,
-    MESSAGE_CODE_FILTER,
+    S04_MESSAGE_CODE,
     SORT_CODE_MAP,
     WINDOW_TIME,
 )
@@ -36,11 +36,11 @@ def format_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # Droping records that are not "54177" (S04) in messageCode column
     original_records = len(df)
-    df = df[df["messageCode"] == MESSAGE_CODE_FILTER]
+    df = df[df["messageCode"] == S04_MESSAGE_CODE]
     remaining_records = len(df)
     dropped_count = original_records - remaining_records
     print(
-        f"Filtered dataset: kept {remaining_records} rows with messageCode = {MESSAGE_CODE_FILTER}"
+        f"Filtered dataset: kept {remaining_records} rows with messageCode = {S04_MESSAGE_CODE}"
         f"\n\tdropped {dropped_count} out of {original_records} total rows"
     )
     return df
