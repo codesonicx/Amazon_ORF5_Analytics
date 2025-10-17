@@ -1,42 +1,37 @@
-import pandas as pd
-import csv
-import os
 import ast
+import os
 
-from utils.file_picker import select_file
-from utils.time_frame import select_window_cli
+import pandas as pd
 
 # Global Constants
-from config import (WINDOW_TIME, MESSAGE_CODE_FILTER, SORT_CODE_MAP, DEFECT_CATEGORY_MAP, MAP_BEUMER_TO_AMAZON, JACKPOT_DESTINATIONS)
-
-def loading_data() -> pd.DataFrame:
-    path = select_file()
-
-    df = pd.read_csv(
-        path,
-        sep=";",
-        header=None,
-        engine="python",
-        quoting=csv.QUOTE_NONE,
-        skipinitialspace=True,
-        on_bad_lines="skip",
-        dtype=str
-    )
-
-    print(f"Loading data successful, dataframe shape: {df.shape}")
-    print("Parsing data...")
-    return df
+from config import (
+    DEFECT_CATEGORY_MAP,
+    MESSAGE_CODE_FILTER,
+    SORT_CODE_MAP,
+    WINDOW_TIME,
+)
+from utils.data_loader import load_data
+from utils.time_frame import select_window_cli
 
 
 def format_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    df = df.replace('"', '',regex=True)         # Remove all double quotes
-    df = df.replace(r"\s+", '',regex=True)      # Remove all whitespace
+    df = df.replace('"', "", regex=True)  # Remove all double quotes
+    df = df.replace(r"\s+", "", regex=True)  # Remove all whitespace
 
     df.columns = [
-        "timeStamp", "flag", "systemName", "ipAddress", "sender", "unkown",
-        "unkown_2", "timeStampPLC", "mainCabinetName", "messageCode", "sequenceNo",
-        "rawMessage"
+        "timeStamp",
+        "flag",
+        "systemName",
+        "ipAddress",
+        "sender",
+        "unkown",
+        "unkown_2",
+        "timeStampPLC",
+        "mainCabinetName",
+        "messageCode",
+        "sequenceNo",
+        "rawMessage",
     ]
 
     # Droping records that are not "54177" (S04) in messageCode column
@@ -44,35 +39,39 @@ def format_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["messageCode"] == MESSAGE_CODE_FILTER]
     remaining_records = len(df)
     dropped_count = original_records - remaining_records
-    print(f"Filtered dataset: kept {remaining_records} rows with messageCode = {MESSAGE_CODE_FILTER}"
-        f"\n\tdropped {dropped_count} out of {original_records} total rows")
+    print(
+        f"Filtered dataset: kept {remaining_records} rows with messageCode = {MESSAGE_CODE_FILTER}"
+        f"\n\tdropped {dropped_count} out of {original_records} total rows"
+    )
     return df
 
 
-def parse_data(df: pd.DataFrame) -> pd.DataFrame:
+def parse_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     df = df.copy()
     # timeStamp parsing
-    df["timeStamp"] = pd.to_datetime(df["timeStamp"], format="%y%m%d%H%M%S%f", errors="coerce")
+    df["timeStamp"] = pd.to_datetime(
+        df["timeStamp"], format="%y%m%d%H%M%S%f", errors="coerce"
+    )
 
     # Helper functions to handle arrays inside values
     def split_key_values(text):
         """Split key:value pairs by commas, ignoring commas inside [brackets]."""
-        parts = []                 # Final list of key:value strings
-        buf = ""                   # Temporary buffer to collect characters
-        inside_brackets = 0        # Counter to track nesting depth of [ ]
+        parts = []  # Final list of key:value strings
+        buf = ""  # Temporary buffer to collect characters
+        inside_brackets = 0  # Counter to track nesting depth of [ ]
 
         for ch in text:
-            if ch == "[": 
-                inside_brackets += 1   # Entering a bracket → increase depth
-            elif ch == "]": 
-                inside_brackets -= 1   # Leaving a bracket → decrease depth
+            if ch == "[":
+                inside_brackets += 1  # Entering a bracket → increase depth
+            elif ch == "]":
+                inside_brackets -= 1  # Leaving a bracket → decrease depth
 
             # Split only on commas that are *outside* brackets
             if ch == "," and inside_brackets == 0:
                 parts.append(buf.strip())  # Save the current piece
-                buf = ""                   # Reset buffer for next piece
+                buf = ""  # Reset buffer for next piece
             else:
-                buf += ch                  # Keep building the current piece
+                buf += ch  # Keep building the current piece
 
         # Append the last piece (after the loop ends)
         if buf:
@@ -82,12 +81,16 @@ def parse_data(df: pd.DataFrame) -> pd.DataFrame:
 
     def parse_row(text):
         """Convert a rawMessage string into a dictionary of key:value pairs."""
-        key_value_strings = split_key_values(text)   # Split into ["key1:value1", "key2:value2", ...]
-        parsed_dict = {}                             # Dictionary to hold final result
+        key_value_strings = split_key_values(
+            text
+        )  # Split into ["key1:value1", "key2:value2", ...]
+        parsed_dict = {}  # Dictionary to hold final result
 
         for pair in key_value_strings:
-            if ":" in pair:                          # Only process well-formed pairs
-                key, value = pair.split(":", 1)      # Split into key and value (only on the first colon)
+            if ":" in pair:  # Only process well-formed pairs
+                key, value = pair.split(
+                    ":", 1
+                )  # Split into key and value (only on the first colon)
                 parsed_dict[key.strip()] = value.strip()  # Clean whitespace and store
 
         return parsed_dict
@@ -96,13 +99,17 @@ def parse_data(df: pd.DataFrame) -> pd.DataFrame:
         """Convert a string representation of a list into an actual Python list."""
         if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
             try:
-                return ast.literal_eval(val)  # Safely evaluate the string to a Python list
+                return ast.literal_eval(
+                    val
+                )  # Safely evaluate the string to a Python list
             except (ValueError, SyntaxError):
-                return []                     # Return empty list on error
-        return [val]    # Fallback: wrap non-list in a list
+                return []  # Return empty list on error
+        return [val]  # Fallback: wrap non-list in a list
 
     def normalize_lists(row, target_cols):
-        max_len = max(len(row[c]) if isinstance(row[c], list) else 0 for c in target_cols)
+        max_len = max(
+            len(row[c]) if isinstance(row[c], list) else 0 for c in target_cols
+        )
         for c in target_cols:
             if not isinstance(row[c], list):
                 row[c] = [row[c]]
@@ -110,7 +117,7 @@ def parse_data(df: pd.DataFrame) -> pd.DataFrame:
                 filler = -1 if c != "requestedDestStatus" else "Unused"
                 row[c] = row[c] + [filler] * (max_len - len(row[c]))
         return row
-    
+
     # Message Column parsing
     df["rawMessage"] = df["rawMessage"].str.removeprefix("->{").str.removesuffix("}<")
     # Expand rawMessage into columns
@@ -123,91 +130,148 @@ def parse_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # Join parsed message columns with the base dataframe
     parsed_df = pd.concat([df.drop(columns=["rawMessage"]), message_df], axis=1)
-    parsed_df = parsed_df.apply(normalize_lists, axis=1, target_cols=columns_with_arrays)
-    parsed_df = parsed_df.explode(column=columns_with_arrays, ignore_index=True)    # type: ignore[arg-type]
+    interim_df = parsed_df.copy()
+    parsed_df = parsed_df.apply(
+        normalize_lists, axis=1, target_cols=columns_with_arrays
+    )
+    parsed_df = parsed_df.explode(column=columns_with_arrays, ignore_index=True)  # type: ignore[arg-type]
 
     # Drop rows that contain -1 in of the exploded columns
     parsed_df = parsed_df[~parsed_df[columns_with_arrays].isin([-1]).any(axis=1)]
 
-    return parsed_df
+    return parsed_df, interim_df
 
 
 def drop_constant_cols(df: pd.DataFrame) -> pd.DataFrame:
     # Get list of columns with only 1 unique value, but preserve "sortCode", "indexNo" and "timeStamp"
-    cols_to_drop = df.columns[df.nunique() == 1].tolist()
-    for col in ["sortCode", "indexNo", "timeStamp"]:   # don’t drop sortCode or indexNo
-        if col in cols_to_drop:
-            cols_to_drop.remove(col)
-    # Usual Columns Dropped
-    # ['flag', 'systemName', 'ipAddress', 'sender', 'unkown', 'unkown_2', 'machineCode', 'unitID', 'event', 'requestedDestStatus', 'comHost', 'comMode', 'telegramType']
+    # We don't use this method because across multiple sites the way of how they populate these columns may be broken or have inconsistencies
+    # cols_to_drop = df.columns[df.nunique() == 1].tolist()
+    # So keeping in mind this, we are going to use a hardcoded list of columns to drop
+    keep_cols = [
+        "timeStamp",
+        "plcRecordNo",
+        "itemID",
+        "indexNo",
+        "locationAWCS",
+        "barcodeAWCS",
+        "actualDestMCID",
+        "requestedDestMCID",
+        "sortCode",
+    ]
 
     # Usual Columns Remaining
     # ['timeStamp', 'PLCTimeStamp', 'sequenceNo', 'plcRecordNo', 'itemID', 'indexNo', 'locationAWCS', 'barcodeAWCS', 'actualDestMCID', 'requestedDestMCID', 'sortCode']
-    return df.drop(columns=cols_to_drop)
+    return df[keep_cols].copy()
+
+
+def load_mapping(path: str) -> dict:
+    """Load and clean chute mapping file into dictionary."""
+    df = load_data(path)
+    # Strip quotes/spaces just in case
+    for col in df.columns:
+        df[col] = df[col].apply(lambda x: str(x).strip() if pd.notnull(x) else x)
+
+    # Build mapping: IndexNo -> {'amazon': ..., 'beumer': ..., 'jackpot': ...}
+    mapping = {
+        int(row["IndexNo"]): {
+            "amazon": row["Amazon"],
+            "beumer": row["Beumer"],
+            "jackpot": row["Jackpot"],
+        }
+        for _, row in df.iterrows()
+    }
+    return mapping
+
+
+def enrich_window_df(window_df: pd.DataFrame, mapping: dict) -> pd.DataFrame:
+    """Apply all enrichment mappings to window_df."""
+
+    window_df["sortReason"] = window_df["sortCode"].map(SORT_CODE_MAP)
+    window_df["defectCategory"] = window_df["sortReason"].map(DEFECT_CATEGORY_MAP)
+
+    map_series = window_df["requestedDestMCID"].map(mapping)
+    # Expand mapping into separate columns
+    window_df["Amazon_Destination"] = map_series.apply(
+        lambda x: x["amazon"] if isinstance(x, dict) else None
+    )
+    window_df["Beumer_Destination"] = map_series.apply(
+        lambda x: x["beumer"] if isinstance(x, dict) else None
+    )
+    window_df["Jackpot_Destination"] = map_series.apply(
+        lambda x: x["jackpot"] if isinstance(x, dict) else None
+    )
+
+    return window_df
 
 
 def remove_false_positives(df: pd.DataFrame) -> pd.DataFrame:
-    bad_ids_path = select_file()
-    if not bad_ids_path:
-        print("\nNo file selected. Skipping Cleanup\n")
-    else:
-        # Load file depending on extension
-        if bad_ids_path.endswith(".csv"):
-            bad_ids_df = pd.read_csv(bad_ids_path)
-        elif bad_ids_path.endswith((".xlsx", ".xls")):
-            bad_ids_df = pd.read_excel(bad_ids_path)
-        else:
-            raise ValueError("Unsupported file type selected!")
+    try:
+        print(
+            "Please select the Excel file containing the list of indexNo values to remove false positives from."
+        )
+        bad_ids_df = load_data()
+    except ValueError as e:
+        print(f"Error loading Excel file: {e}")
+        return df
 
-        # First two columns: ID and Comment
-        id_col = bad_ids_df.columns[0]
-        comment_col = bad_ids_df.columns[1]
+    # First two columns: ID and Comment
+    id_col = bad_ids_df.columns[0]
+    comment_col = bad_ids_df.columns[1]
 
-        # Build {indexNo -> comment} with 4-digit padding
-        id_comment_dict = {}
-        for _, row in bad_ids_df.iterrows():
-            if pd.notna(row[id_col]):
-                key = str(int(row[id_col])).zfill(4)
-                comment = row[comment_col] if pd.notna(row[comment_col]) else ""
-                id_comment_dict[key] = comment
+    # Build {indexNo -> comment} with 4-digit padding
+    id_comment_dict = {}
+    for _, row in bad_ids_df.iterrows():
+        if pd.notna(row[id_col]):
+            key = str(int(row[id_col])).zfill(4)
+            comment = row[comment_col] if pd.notna(row[comment_col]) else ""
+            id_comment_dict[key] = comment
 
-        df["No Scan Defect Explanation"] = ""                   # Creating New Column where the comments of the user will be stored
-        scan_defects = df[df["sortCode"].isin([8, 9, 10])]      # Restrict to scan-defect rows
-        modified_count = 0
-        matched_ids = []
-        # Keep track of which rows we've already modified
-        used_rows = set()
+    df["No Scan Defect Explanation"] = (
+        ""  # Creating New Column where the comments of the user will be stored
+    )
+    scan_defects = df[df["sortCode"].isin([8, 9, 10])]  # Restrict to scan-defect rows
+    modified_count = 0
+    matched_ids = []
+    # Keep track of which rows we've already modified
+    used_rows = set()
 
-        for bad_id, comment in zip(bad_ids_df[id_col], bad_ids_df[comment_col]):
-            if pd.isna(bad_id):
-                continue
-            padded_id = str(int(bad_id)).zfill(4)
+    for bad_id, comment in zip(bad_ids_df[id_col], bad_ids_df[comment_col]):
+        if pd.isna(bad_id):
+            continue
+        padded_id = str(int(bad_id)).zfill(4)
 
-            # Find candidate rows not already used
-            candidates = scan_defects.index[
-                (scan_defects["indexNo"] == padded_id) & (~scan_defects.index.isin(used_rows))
-            ]
+        # Find candidate rows not already used
+        candidates = scan_defects.index[
+            (scan_defects["indexNo"] == padded_id)
+            & (~scan_defects.index.isin(used_rows))
+        ]
 
-            if len(candidates) > 0:
-                row_idx = candidates[0]   # take the next available one
-                df.at[row_idx, "sortCode"] = 0
-                df.at[row_idx, "No Scan Defect Explanation"] = comment if pd.notna(comment) else ""
-                used_rows.add(row_idx)
+        if len(candidates) > 0:
+            row_idx = candidates[0]  # take the next available one
+            df.at[row_idx, "sortCode"] = 0
+            df.at[row_idx, "No Scan Defect Explanation"] = (
+                comment if pd.notna(comment) else ""
+            )
+            used_rows.add(row_idx)
 
-                matched_ids.append(padded_id)
-                modified_count += 1
+            matched_ids.append(padded_id)
+            modified_count += 1
 
-        # IDs from user list that didn’t get applied
-        not_found = [str(int(x)).zfill(4) for x in bad_ids_df[id_col] if str(int(x)).zfill(4) not in matched_ids]
+    # IDs from user list that didn’t get applied
+    not_found = [
+        str(int(x)).zfill(4)
+        for x in bad_ids_df[id_col]
+        if str(int(x)).zfill(4) not in matched_ids
+    ]
 
-        print(f"Modified sortCode to 0 for {modified_count} rows (respecting duplicates in user list).")
-        if matched_ids:
-            print("IDs modified:", matched_ids)
-        if not_found:
-            print("IDs not applied (no scan-defect row left):", not_found)
+    print(
+        f"Modified sortCode to 0 for {modified_count} rows (respecting duplicates in user list)."
+    )
+    if matched_ids:
+        print("IDs modified:", matched_ids)
+    if not_found:
+        print("IDs not applied (no scan-defect row left):", not_found)
     return df
-
-    pass
 
 
 def add_package_info(df: pd.DataFrame, threshold_sec: int = 1800) -> pd.DataFrame:
@@ -216,7 +280,13 @@ def add_package_info(df: pd.DataFrame, threshold_sec: int = 1800) -> pd.DataFram
 
     # Sort and compute package boundaries
     df = df.sort_values(["itemID", "timeStamp"])
-    new_pkg_flag = df.groupby("itemID")["timeStamp"].diff().dt.total_seconds().gt(threshold_sec).fillna(True)
+    new_pkg_flag = (
+        df.groupby("itemID")["timeStamp"]
+        .diff()
+        .dt.total_seconds()
+        .gt(threshold_sec)
+        .fillna(True)
+    )
     group_idx = new_pkg_flag.groupby(df["itemID"]).cumsum().astype(int)
 
     # Real package ID
@@ -224,9 +294,13 @@ def add_package_info(df: pd.DataFrame, threshold_sec: int = 1800) -> pd.DataFram
 
     # Classify packages
     by_pkg = df.groupby("RealPackageID")
-    pkg_all_no_read = by_pkg["barcodeAWCS"].apply(lambda s: s.str.fullmatch(r"\?+", na=False).all())
-    pkg_all_multi   = by_pkg["barcodeAWCS"].apply(lambda s: s.str.fullmatch(r"9+",  na=False).all())
-    pkg_normal      = ~(pkg_all_no_read | pkg_all_multi)
+    pkg_all_no_read = by_pkg["barcodeAWCS"].apply(
+        lambda s: s.str.fullmatch(r"\?+", na=False).all()
+    )
+    pkg_all_multi = by_pkg["barcodeAWCS"].apply(
+        lambda s: s.str.fullmatch(r"9+", na=False).all()
+    )
+    pkg_normal = ~(pkg_all_no_read | pkg_all_multi)
 
     pkg_type = (
         pkg_normal.map({True: "normal", False: None})
@@ -235,7 +309,12 @@ def add_package_info(df: pd.DataFrame, threshold_sec: int = 1800) -> pd.DataFram
     )
 
     # Merge back to dataframe
-    df = df.merge(pkg_type.rename("pkg_type"), left_on="RealPackageID", right_index=True, how="left")
+    df = df.merge(
+        pkg_type.rename("pkg_type"),
+        left_on="RealPackageID",
+        right_index=True,
+        how="left",
+    )
 
     return df
 
@@ -246,9 +325,9 @@ def scanner_metrics(df: pd.DataFrame) -> pd.DataFrame:
     # Counts from pkg_type (already precomputed)
     pkg_type_counts = df.groupby("RealPackageID")["pkg_type"].first().value_counts()
 
-    totalPkgCount  = int(pkg_type_counts.sum())
+    totalPkgCount = int(pkg_type_counts.sum())
     normalPkgCount = int(pkg_type_counts.get("normal", 0))
-    noReadCount    = int(pkg_type_counts.get("no_read", 0))
+    noReadCount = int(pkg_type_counts.get("no_read", 0))
     multiReadCount = int(pkg_type_counts.get("multi_read", 0))
 
     print("\nScanner Metrics Summary")
@@ -257,12 +336,19 @@ def scanner_metrics(df: pd.DataFrame) -> pd.DataFrame:
     print(f"  No Read packages: {noReadCount}")
     print(f"  Multi Read packages: {multiReadCount}")
 
-    return pd.DataFrame({
-        "metric": ["total_packages", "normal_packages", "no_read_packages", "multi_read_packages"],
-        "count": [totalPkgCount, normalPkgCount, noReadCount, multiReadCount]
-    })
+    return pd.DataFrame(
+        {
+            "metric": [
+                "total_packages",
+                "normal_packages",
+                "no_read_packages",
+                "multi_read_packages",
+            ],
+            "count": [totalPkgCount, normalPkgCount, noReadCount, multiReadCount],
+        }
+    )
 
-    
+
 def sort_code_metrics(df: pd.DataFrame) -> dict:
     df = df.copy()
 
@@ -282,8 +368,7 @@ def sort_code_metrics(df: pd.DataFrame) -> dict:
 
     # Aggregations
     sort_counts = (
-        unique_pkgs
-        .groupby("sortReason", as_index=False)
+        unique_pkgs.groupby("sortReason", as_index=False)
         .size()
         .rename(columns={"size": "count"})
         .sort_values("count", ascending=False)
@@ -291,19 +376,16 @@ def sort_code_metrics(df: pd.DataFrame) -> dict:
     )
 
     reason_dest_summary = (
-        unique_pkgs
-        .groupby(["sortReason", "Amazon_Destination"], as_index=False)
+        unique_pkgs.groupby(["sortReason", "Amazon_Destination"], as_index=False)
         .size()
         .rename(columns={"size": "count"})
         .sort_values(["sortReason", "count"], ascending=[True, False])
         .reset_index(drop=True)
     )
 
-    reason_dest_pivot = (
-        reason_dest_summary
-        .pivot_table(index=["sortReason"], columns="Amazon_Destination", values="count", fill_value=0)
-        .reset_index()
-    )
+    reason_dest_pivot = reason_dest_summary.pivot_table(
+        index=["sortReason"], columns="Amazon_Destination", values="count", fill_value=0
+    ).reset_index()
 
     print("\nSort Code Metrics Summary")
     print(sort_counts)
@@ -318,7 +400,7 @@ def sort_code_metrics(df: pd.DataFrame) -> dict:
         "sort_counts": sort_counts,
         "reason_dest_summary": reason_dest_summary,
         "reason_dest_pivot": reason_dest_pivot,
-        "recirculation_count": recirculation_count
+        "recirculation_count": recirculation_count,
     }
 
 
@@ -341,12 +423,17 @@ def defect_metrics(df: pd.DataFrame) -> pd.DataFrame:
     no_defect_count = total_processed - defect_count_total
 
     defect_summary = pd.concat(
-        [defect_summary, pd.DataFrame([{"defectCategory": "No Defect", "count": no_defect_count}])],
-        ignore_index=True
+        [
+            defect_summary,
+            pd.DataFrame([{"defectCategory": "No Defect", "count": no_defect_count}]),
+        ],
+        ignore_index=True,
     )
 
     # Percent over total processed
-    defect_summary["percentage"] = (defect_summary["count"] / total_processed * 100).round(4)
+    defect_summary["percentage"] = (
+        defect_summary["count"] / total_processed * 100
+    ).round(4)
 
     print("\nDefect Metrics Summary")
     print(defect_summary)
@@ -355,17 +442,23 @@ def defect_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def jackpot_metrics(df: pd.DataFrame) -> int:
+    """
+    Calculate how many unique packages have 'Jackpot' destinations
+    among successful sort results (sortCode == 0).
+    """
     df = df.copy()
-    
-    # Jackpot = éxito (sortCode==0) + destino en JACKPOT_DESTINATIONS
-    mask = (df["sortCode"] == 0) & (df["requestedDestMCID"].isin(JACKPOT_DESTINATIONS.keys()))
-    
-    # paquetes únicos que pasaron al menos una vez por jackpot
+
+    # Filter: success (sortCode == 0) + destination is a jackpot
+    mask = (df["sortCode"] == 0) & (
+        df["Jackpot_Destination"].astype(str).str.strip().str.lower() == "jackpot"
+    )
+
+    # Count unique packages that hit jackpot at least once
     unique_jackpot_packages = df.loc[mask, "RealPackageID"].nunique()
-    
+
     print("\nJackpot Metrics Summary")
     print(f"  Unique packages that hit jackpot ≥1 time: {unique_jackpot_packages}")
-    
+
     return unique_jackpot_packages
 
 
@@ -373,155 +466,226 @@ def export_to_excel(results: dict) -> None:
     os.makedirs("data", exist_ok=True)
 
     start_str = results["start_ts"].strftime("%Y%m%d-%H%M%S")
-    end_str   = results["end_ts"].strftime("%Y%m%d-%H%M%S")
+    end_str = results["end_ts"].strftime("%Y%m%d-%H%M%S")
     output_path = f"data/Analysis_SO4_{start_str}_{end_str}.xlsx"
 
     print("\nExporting analysis results to Excel file...")
 
     with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
         wb = writer.book
-        ws = wb.add_worksheet("Analysis_Results")   # type: ignore[attr-defined]
-        bold = wb.add_format({"bold": True})        # type: ignore[attr-defined]
+        ws = wb.add_worksheet("Analysis_Results")  # type: ignore[attr-defined]
+        bold = wb.add_format({"bold": True})  # type: ignore[attr-defined]
 
         # Analysis Summary
         ws.write("A1", "Analysis Summary", bold)
         ws.write("A2", "Total records (window dataset):")
-        ws.write_number("B2", results["total_processed"])
+        ws.write_number("B2", results["S04_processed"])
         ws.write("A3", "Total processed packages:")
-        ws.write_number("B3", results["total_unique_packages"])
+        ws.write_number("B3", results["package_processed"])
         ws.write("A4", "Total truly one-off packages:")
-        ws.write_number("B4", results["non_recirculation_records"])
+        ws.write_number("B4", results["unique_packages"])
         ws.write("A5", "Total recirculation packages:")
         ws.write_number("B5", results["recirculation_packages"])
         ws.write("A6", "Total recirculation records:")
         ws.write_number("B6", results["recirculation_records"])
+        ws.write("A7", "Total jackpot packages:")
+        ws.write_number("B7", results["jackpot_packages"])
 
-        ws.write("A8", "Time window", bold)
-        ws.write("A9", "StartTime:")
-        ws.write("B9", results["start_ts"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
-        ws.write("A10", "EndTime:")
-        ws.write("B10", results["end_ts"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
+        ws.write("A9", "Time window", bold)
+        ws.write("A10", "StartTime:")
+        ws.write("B10", results["start_ts"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
+        ws.write("A11", "EndTime:")
+        ws.write("B11", results["end_ts"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
 
         # Defect Summary
-        ws.write("A12", "Defect Category Breakdown", bold)
-        results["defect_summary"].to_excel(writer, sheet_name="Analysis_Results", startrow=12, startcol=0, index=False)
+        start_row_defect = 13
+        ws.write("A13", "Defect Category Breakdown", bold)
+        results["defect_summary"].to_excel(
+            writer,
+            sheet_name="Analysis_Results",
+            startrow=start_row_defect,
+            startcol=0,
+            index=False,
+        )
 
         # Sort Reason Counts
-        start_row_sort = 12 + len(results["defect_summary"]) + 3
+        start_row_sort = 19
         ws.write(start_row_sort - 1, 0, "Sort Code Reason Counts", bold)
-        results["sort_counts"].to_excel(writer, sheet_name="Analysis_Results", startrow=start_row_sort, startcol=0, index=False)
+        results["sort_code_summary"].to_excel(
+            writer,
+            sheet_name="Analysis_Results",
+            startrow=start_row_sort,
+            startcol=0,
+            index=False,
+        )
 
         # Pivot Table
-        start_row_pivot = start_row_sort + len(results["sort_counts"]) + 3
+        start_row_pivot = start_row_sort + len(results["sort_code_summary"]) + 3
         ws.write(start_row_pivot - 1, 0, "SortReason vs RequestedDestMCID", bold)
-        results["reason_dest_pivot"].to_excel(writer, sheet_name="Analysis_Results", startrow=start_row_pivot, startcol=0, index=False)
+        results["reason_dest_pivot"].to_excel(
+            writer,
+            sheet_name="Analysis_Results",
+            startrow=start_row_pivot,
+            startcol=0,
+            index=False,
+        )
 
         # Charts
         # Pie chart for defect breakdown
-        chart_pie = wb.add_chart({"type": "pie"})   # type: ignore[attr-defined]
-        end_row_def = 12 + len(results["defect_summary"])
-        chart_pie.add_series({
-            "name": "Defect Category Breakdown",
-            "categories": ["Analysis_Results", 13, 0, end_row_def, 0],
-            "values": ["Analysis_Results", 13, 1, end_row_def, 1],
-            "data_labels": {"percentage": True, "num_format": "0.0%", "position": "outside_end"},
-        })
+        chart_pie = wb.add_chart({"type": "pie"})  # type: ignore[attr-defined]
+        end_row_def = start_row_defect + len(results["defect_summary"])
+        chart_pie.add_series(
+            {
+                "name": "Defect Category Breakdown",
+                "categories": [
+                    "Analysis_Results",
+                    start_row_defect + 1,
+                    0,
+                    end_row_def,
+                    0,
+                ],
+                "values": ["Analysis_Results", start_row_defect + 1, 1, end_row_def, 1],
+                "data_labels": {
+                    "percentage": True,
+                    "num_format": "0.0%",
+                    "position": "outside_end",
+                },
+            }
+        )
         chart_pie.set_title({"name": "Defect Breakdown"})
         ws.insert_chart(0, 4, chart_pie, {"x_scale": 1.5, "y_scale": 1.5})
 
         # Column chart for sort counts
-        bar_chart = wb.add_chart({"type": "column"})    # type: ignore[attr-defined]
-        end_row_sort = start_row_sort + len(results["sort_counts"])
-        bar_chart.add_series({
-            "name": "Sort Code Reason Counts",
-            "categories": ["Analysis_Results", start_row_sort + 1, 0, end_row_sort, 0],
-            "values": ["Analysis_Results", start_row_sort + 1, 1, end_row_sort, 1],
-            "data_labels": {"value": True},
-        })
+        bar_chart = wb.add_chart({"type": "column"})  # type: ignore[attr-defined]
+        end_row_sort = start_row_sort + len(results["sort_code_summary"])
+        bar_chart.add_series(
+            {
+                "name": "Sort Code Reason Counts",
+                "categories": [
+                    "Analysis_Results",
+                    start_row_sort + 1,
+                    0,
+                    end_row_sort,
+                    0,
+                ],
+                "values": ["Analysis_Results", start_row_sort + 1, 1, end_row_sort, 1],
+                "data_labels": {"value": True},
+            }
+        )
         bar_chart.set_title({"name": "Items per Sort Code Reason"})
         ws.insert_chart(0, 16, bar_chart, {"x_scale": 1.5, "y_scale": 1.5})
 
         # Stacked column chart for pivot table
         end_row_pivot = start_row_pivot + len(results["reason_dest_pivot"])
         end_col_pivot = 20 + len(results["reason_dest_pivot"].columns) - 1
-        stack_chart = wb.add_chart({"type": "column", "subtype": "stacked"})    # type: ignore[attr-defined]
+        stack_chart = wb.add_chart({"type": "column", "subtype": "stacked"})  # type: ignore[attr-defined]
         for r in range(start_row_pivot + 1, end_row_pivot + 1):
-            stack_chart.add_series({
-                "name": ["Analysis_Results", r, 0],
-                "categories": ["Analysis_Results", start_row_pivot, 1, start_row_pivot, end_col_pivot],
-                "values": ["Analysis_Results", r, 1, r, end_col_pivot],
-            })
+            stack_chart.add_series(
+                {
+                    "name": ["Analysis_Results", r, 0],
+                    "categories": [
+                        "Analysis_Results",
+                        start_row_pivot,
+                        1,
+                        start_row_pivot,
+                        end_col_pivot,
+                    ],
+                    "values": ["Analysis_Results", r, 1, r, end_col_pivot],
+                }
+            )
         stack_chart.set_title({"name": "Amazon Induction vs SortReason"})
-        ws.insert_chart(start_row_pivot + len(results["reason_dest_pivot"]) + 1, 0, stack_chart, {"x_scale": 8, "y_scale": 3})
+        ws.insert_chart(
+            start_row_pivot + len(results["reason_dest_pivot"]) + 1,
+            0,
+            stack_chart,
+            {"x_scale": 8, "y_scale": 3},
+        )
 
         # Extra Sheets
         results["parsed_df"].to_excel(writer, sheet_name="Raw_Data", index=False)
         results["window_df"].to_excel(writer, sheet_name="Window_Data", index=False)
         results["scan_defects"].to_excel(writer, sheet_name="Scan_Defects", index=False)
+        results["test_df"].to_excel(writer, sheet_name="Test_Parsed_Data", index=False)
 
     print(f"Analysis results saved to: {output_path}")
 
 
-
 def main():
     print("Select a S04 data file (CSV format) from Log Monitor...")
-    raw_df = loading_data()
+    try:
+        raw_df = load_data()
+    except ValueError as e:
+        print(e)
+        return
+    print("Parsing data...")
     format_df = format_data(raw_df)
-    parsed_df = parse_data(format_df)
+    parsed_df, interim_df = parse_data(format_df)
     clean_df = drop_constant_cols(parsed_df)
 
     print("Select time window for analysis:")
     window_df, start_ts, end_ts = select_window_cli(clean_df, WINDOW_TIME)
 
-    # Mapping columns to have human-readable values
-    window_df["sortReason"] = window_df["sortCode"].map(SORT_CODE_MAP)
-    window_df["defectCategory"] = window_df["sortReason"].map(DEFECT_CATEGORY_MAP)
-    # window_df["Amazon_Destination"] = window_df["requestedDestMCID"].map(MAP_BEUMER_TO_AMAZON)
+    print("\nExtracting Mapping Destination Names from Excel...")
+    mapping_destination_names = load_mapping(r"data\SAT9_Destination_Mapping.xlsx")
 
-    map_series = window_df["requestedDestMCID"].map(MAP_BEUMER_TO_AMAZON)
-    window_df["Amazon_Destination"] = map_series.apply(lambda x: x["amazon"] if isinstance(x, dict) else None)
-    window_df["Beumer_Destination"] = map_series.apply(lambda x: x["beumer"] if isinstance(x, dict) else None)
-
+    print("\nEnriching data with mappings...")
+    window_df = enrich_window_df(window_df, mapping_destination_names)
 
     # Optional cleanup of wrong sortCodes
-    do_cleanup = input("Do you want to clean up wrong sortCodes using the Excel file? (yes/no): ").strip().lower()
+    do_cleanup = (
+        input(
+            "Do you want to clean up wrong sortCodes using the Excel file? (yes/no): "
+        )
+        .strip()
+        .lower()
+    )
     if do_cleanup == "yes":
-        print("\nYou selected to remove false positives. Please upload your Excel file containing the indexNo values to remove.")
+        print(
+            "\nYou selected to remove false positives. Please upload your Excel file containing the indexNo values to remove."
+        )
         window_df = remove_false_positives(window_df)
     else:
         print("\nSkipping sortCode cleanup step.\n")
 
     print("\nGetting analysis metrics...")
     window_df = add_package_info(window_df)
-    scanner_df =  scanner_metrics(window_df)
+    scanner_df = scanner_metrics(window_df)
     sort_code_results = sort_code_metrics(window_df)
     defect_df = defect_metrics(window_df)
     jackpot_count = jackpot_metrics(window_df)
 
-    # analysis_results = {
-    #     # Metadata
-    #     "start_ts": start_ts,
-    #     "end_ts": end_ts,
-    #     "S04_processed": window_df.shape[0],
-    #     "package_processed": window_df["RealPackageID"].nunique(),
-    #     "unique_packages": scanner_df.loc[scanner_df["metric"] == "total_packages", "count"].values[0],
-    #     "non_recirculation_records": non_recirculation_records,
-    #     "recirculation_packages": recirculation_packages,
-    #     "recirculation_records": recirculation_records,
+    analysis_results = {
+        # Metadata
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "S04_processed": window_df.shape[0],
+        "package_processed": window_df["RealPackageID"].nunique(),
+        "unique_packages": scanner_df.loc[
+            scanner_df["metric"] == "total_packages", "count"
+        ].values[0],
+        "recirculation_packages": sort_code_results["recirculation_count"],
+        "recirculation_records": window_df[
+            window_df["RealPackageID"].isin(
+                window_df.loc[
+                    window_df.duplicated("RealPackageID", keep=False), "RealPackageID"
+                ]
+            )
+        ].shape[0],
+        "jackpot_packages": jackpot_count,
+        # DataFrames
+        "defect_summary": defect_df,
+        "sort_code_summary": sort_code_results["sort_counts"],
+        "reason_dest_pivot": sort_code_results["reason_dest_pivot"],
+        "parsed_df": parsed_df,
+        "window_df": window_df,
+        "scan_defects": window_df[window_df["sortCode"].isin([8, 9, 10])][
+            ["indexNo", "timeStamp", "sortCode"]
+        ].copy(),
+        "test_df": interim_df,
+    }
 
-    #     # DataFrames
-    #     "defect_summary": defect_summary,
-    #     "sort_counts": sortcode_results["sort_counts"],
-    #     "reason_dest_pivot": sortcode_results["reason_dest_pivot"],
-    #     "raw_df": raw_df,
-    #     "clean_df": clean_df,
-    #     "window_df": window_df,
-    #     "scan_defects": scan_defects
-    # }
+    export_to_excel(analysis_results)
 
-
-    # export_to_excel(scanner_df, sort_code_results, defect_df)
 
 if __name__ == "__main__":
     main()
-
