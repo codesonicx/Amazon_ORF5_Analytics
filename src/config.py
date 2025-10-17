@@ -1,7 +1,10 @@
 # Configuration file for S01, S02 and S04 messages of Log Monitor
 
 WINDOW_TIME = 30  # minutes
-MESSAGE_CODE_FILTER = "54177"  # Items Inducted
+PPH_MESSAGE_CODE = "54123"
+S01_OH_MESSAGE_CODE = "54113"
+S01_MESSAGE_CODE = "54158"
+S04_MESSAGE_CODE = "54177"
 
 # Dictionary for mapping sort codes
 SORT_CODE_MAP = {
