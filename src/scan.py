@@ -1,6 +1,5 @@
 import ast
 import os
-from typing import Optional
 
 import pandas as pd
 
@@ -40,10 +39,12 @@ def format_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["messageCode"] == S04_MESSAGE_CODE]
     remaining_records = len(df)
     dropped_count = original_records - remaining_records
+
     print(
-        f"Filtered dataset: kept {remaining_records} rows with messageCode = {S04_MESSAGE_CODE}"
-        f"\n\tdropped {dropped_count} out of {original_records} total rows"
+        f"Filtered dataset: kept {remaining_records} rows with messageCode = {S04_MESSAGE_CODE}\n"
+        + f"\tdropped {dropped_count} out of {original_records} total rows"
     )
+
     return df
 
 
@@ -55,9 +56,9 @@ def parse_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     )
 
     # Helper functions to handle arrays inside values
-    def split_key_values(text):
+    def split_key_values(text: str) -> list[str]:
         """Split key:value pairs by commas, ignoring commas inside [brackets]."""
-        parts = []  # Final list of key:value strings
+        parts: list[str] = []  # Final list of key:value strings
         buf = ""  # Temporary buffer to collect characters
         inside_brackets = 0  # Counter to track nesting depth of [ ]
 
@@ -80,12 +81,12 @@ def parse_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
         return parts
 
-    def parse_row(text):
+    def parse_row(text: str) -> dict[str, str]:
         """Convert a rawMessage string into a dictionary of key:value pairs."""
         key_value_strings = split_key_values(
             text
         )  # Split into ["key1:value1", "key2:value2", ...]
-        parsed_dict = {}  # Dictionary to hold final result
+        parsed_dict: dict[str, str] = {}  # Dictionary to hold final result
 
         for pair in key_value_strings:
             if ":" in pair:  # Only process well-formed pairs
@@ -165,7 +166,7 @@ def drop_constant_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df[keep_cols].copy()
 
 
-def load_mapping(path: Optional[str] = None) -> dict:
+def load_mapping(path: str | None = None) -> dict:
     """Load and clean chute mapping file into dictionary."""
     df = load_data(path)
     # Strip quotes/spaces just in case
@@ -442,10 +443,11 @@ def defect_metrics(df: pd.DataFrame) -> pd.DataFrame:
     return defect_summary
 
 
-def jackpot_metrics(df: pd.DataFrame) -> int:
+def jackpot_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Calculate how many unique packages have 'Jackpot' destinations
-    among successful sort results (sortCode == 0).
+    Summarize jackpot-related metrics:
+      - Unique packages that hit at least one jackpot (sortCode == 0)
+      - Breakdown by each Jackpot destination, showing Amazon & Beumer names
     """
     df = df.copy()
 
@@ -453,14 +455,29 @@ def jackpot_metrics(df: pd.DataFrame) -> int:
     mask = (df["sortCode"] == 0) & (
         df["Jackpot_Destination"].astype(str).str.strip().str.lower() == "jackpot"
     )
+    jackpot_df = df.loc[mask]
 
-    # Count unique packages that hit jackpot at least once
-    unique_jackpot_packages = df.loc[mask, "RealPackageID"].nunique()
+    # Count unique packages hitting any jackpot
+    unique_jackpot_packages = jackpot_df["RealPackageID"].nunique()
 
+    # Group by each destination (Beumer + Amazon combo)
+    summary = (
+        jackpot_df.groupby(["Beumer_Destination", "Amazon_Destination"])[
+            "RealPackageID"
+        ]
+        .nunique()
+        .reset_index(name="unique_packages")
+        .sort_values("unique_packages", ascending=False)
+    )
+
+    # Print summary
     print("\nJackpot Metrics Summary")
-    print(f"  Unique packages that hit jackpot ≥1 time: {unique_jackpot_packages}")
+    print(f"  Unique packages that hit jackpot ≥1 time: {unique_jackpot_packages}\n")
 
-    return unique_jackpot_packages
+    print("  Breakdown by destination:")
+    print(summary.to_string(index=False))
+
+    return summary
 
 
 def export_to_excel(results: dict) -> None:
@@ -489,8 +506,11 @@ def export_to_excel(results: dict) -> None:
         ws.write_number("B5", results["recirculation_packages"])
         ws.write("A6", "Total recirculation records:")
         ws.write_number("B6", results["recirculation_records"])
-        ws.write("A7", "Total jackpot packages:")
-        ws.write_number("B7", results["jackpot_packages"])
+        # ws.write("A7", "Total jackpot packages:")
+        # ws.write_number("B7", results["jackpot_packages"])
+        results["jackpot_packages"].to_excel(
+            writer, sheet_name="Analysis_Results", startrow=7, startcol=3, index=False
+        )
 
         ws.write("A9", "Time window", bold)
         ws.write("A10", "StartTime:")
@@ -628,7 +648,7 @@ def main():
 
     print("\nExtracting Mapping Destination Names from Excel...")
     # mapping_destination_names = load_mapping(r"data\SAT9_Destination_Mapping.xlsx")
-    mapping_destination_names = load_mapping()
+    mapping_destination_names = load_mapping(r"data\ORF5_Destination_Mapping.xlsx")
 
     print("\nEnriching data with mappings...")
     window_df = enrich_window_df(window_df, mapping_destination_names)
@@ -654,7 +674,7 @@ def main():
     scanner_df = scanner_metrics(window_df)
     sort_code_results = sort_code_metrics(window_df)
     defect_df = defect_metrics(window_df)
-    jackpot_count = jackpot_metrics(window_df)
+    jackpot_df = jackpot_metrics(window_df)
 
     analysis_results = {
         # Metadata
@@ -673,7 +693,7 @@ def main():
                 ]
             )
         ].shape[0],
-        "jackpot_packages": jackpot_count,
+        "jackpot_packages": jackpot_df,
         # DataFrames
         "defect_summary": defect_df,
         "sort_code_summary": sort_code_results["sort_counts"],
