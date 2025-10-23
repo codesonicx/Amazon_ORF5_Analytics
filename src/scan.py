@@ -506,21 +506,36 @@ def export_to_excel(results: dict) -> None:
         ws.write_number("B5", results["recirculation_packages"])
         ws.write("A6", "Total recirculation records:")
         ws.write_number("B6", results["recirculation_records"])
-        # ws.write("A7", "Total jackpot packages:")
-        # ws.write_number("B7", results["jackpot_packages"])
+        ws.write("A7", "Total jackpot packages:")
+        start_row = 7
         results["jackpot_packages"].to_excel(
-            writer, sheet_name="Analysis_Results", startrow=7, startcol=3, index=False
+            writer,
+            sheet_name="Analysis_Results",
+            startrow=start_row,
+            startcol=0,
+            index=False,
         )
 
-        ws.write("A9", "Time window", bold)
-        ws.write("A10", "StartTime:")
-        ws.write("B10", results["start_ts"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
-        ws.write("A11", "EndTime:")
-        ws.write("B11", results["end_ts"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
+        # Compute how many rows were written (including header)
+        jackpot_rows = len(results["jackpot_packages"]) + 1  # +1 for header row
+
+        # Now calculate where to write the next content dynamically
+        next_row = start_row + jackpot_rows + 2  # +1 adds a blank line for readability
+
+        ws.write(f"A{next_row}", "Time window", bold)
+        ws.write(f"A{next_row + 1}", "StartTime:")
+        ws.write(
+            f"B{next_row + 1}",
+            results["start_ts"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+        )
+        ws.write(f"A{next_row + 2}", "EndTime:")
+        ws.write(
+            f"B{next_row + 2}", results["end_ts"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        )
 
         # Defect Summary
-        start_row_defect = 13
-        ws.write("A13", "Defect Category Breakdown", bold)
+        start_row_defect = next_row + 4
+        ws.write(f"A{start_row_defect}", "Defect Category Breakdown", bold)
         results["defect_summary"].to_excel(
             writer,
             sheet_name="Analysis_Results",
@@ -530,8 +545,8 @@ def export_to_excel(results: dict) -> None:
         )
 
         # Sort Reason Counts
-        start_row_sort = 19
-        ws.write(start_row_sort - 1, 0, "Sort Code Reason Counts", bold)
+        start_row_sort = start_row_defect + len(results["defect_summary"]) + 2
+        ws.write(f"A{start_row_sort - 1}", "Sort Code Reason Counts", bold)
         results["sort_code_summary"].to_excel(
             writer,
             sheet_name="Analysis_Results",
