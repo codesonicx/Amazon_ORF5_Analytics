@@ -145,10 +145,12 @@ def parse_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def drop_constant_cols(df: pd.DataFrame) -> pd.DataFrame:
-    # Get list of columns with only 1 unique value, but preserve "sortCode", "indexNo" and "timeStamp"
-    # We don't use this method because across multiple sites the way of how they populate these columns may be broken or have inconsistencies
-    # cols_to_drop = df.columns[df.nunique() == 1].tolist()
-    # So keeping in mind this, we are going to use a hardcoded list of columns to drop
+    """
+    Drop columns that have only a single unique value across all rows.
+    """
+
+    # Avoid detecting constant columns dynamically (e.g. df.nunique() == 1)
+    # since some sites may populate certain fields inconsistently.
     keep_cols = [
         "timeStamp",
         "plcRecordNo",
@@ -161,28 +163,50 @@ def drop_constant_cols(df: pd.DataFrame) -> pd.DataFrame:
         "sortCode",
     ]
 
-    # Usual Columns Remaining
-    # ['timeStamp', 'PLCTimeStamp', 'sequenceNo', 'plcRecordNo', 'itemID', 'indexNo', 'locationAWCS', 'barcodeAWCS', 'actualDestMCID', 'requestedDestMCID', 'sortCode']
     return df[keep_cols].copy()
 
 
-def load_mapping(path: str | None = None) -> dict:
-    """Load and clean chute mapping file into dictionary."""
-    df = load_data(path)
-    # Strip quotes/spaces just in case
-    for col in df.columns:
-        df[col] = df[col].apply(lambda x: str(x).strip() if pd.notnull(x) else x)
+def load_mapping() -> dict:
+    """
+    Load and clean the destination mapping file for the specified site.
 
-    # Build mapping: IndexNo -> {'amazon': ..., 'beumer': ..., 'jackpot': ...}
-    mapping = {
-        int(row["IndexNo"]): {
-            "amazon": row["Amazon"],
-            "beumer": row["Beumer"],
-            "jackpot": row["Jackpot"],
+    The file name must follow the convention: "<SITE>_Destination_Mapping.xlsx".
+    """
+
+    site = input("Enter the site name (e.g., ORF5, SAT9, CNO8): ").strip().upper()
+
+    # Construct file path based on site name
+    mapping_path = f"data/{site}_Destination_Mapping.xlsx"
+
+    print(f"\nExtracting Mapping Destination Names for {site}...")
+
+    try:
+        # Load Excel file
+        df = load_data(mapping_path)
+
+        # Clean strings: remove spaces and quotes if present
+        for col in df.columns:
+            df[col] = df[col].apply(lambda x: str(x).strip() if pd.notnull(x) else x)
+
+        # Build mapping: IndexNo -> {'amazon': ..., 'beumer': ..., 'jackpot': ...}
+        mapping = {
+            int(row["IndexNo"]): {
+                "amazon": row["Amazon"],
+                "beumer": row["Beumer"],
+                "jackpot": row["Jackpot"],
+            }
+            for _, row in df.iterrows()
         }
-        for _, row in df.iterrows()
-    }
-    return mapping
+
+        print(f"Mapping file for {site} loaded successfully.")
+        return mapping
+
+    except FileNotFoundError:
+        print(f"Error: Mapping file for '{site}' not found at '{mapping_path}'.")
+    except Exception as e:
+        print(f"Error loading mapping for {site}: {e}")
+
+    return {}
 
 
 def enrich_window_df(window_df: pd.DataFrame, mapping: dict) -> pd.DataFrame:
@@ -661,9 +685,10 @@ def main():
     print("Select time window for analysis:")
     window_df, start_ts, end_ts = select_window_cli(clean_df, WINDOW_TIME)
 
-    print("\nExtracting Mapping Destination Names from Excel...")
-    # mapping_destination_names = load_mapping(r"data\SAT9_Destination_Mapping.xlsx")
-    mapping_destination_names = load_mapping(r"data\ORF5_Destination_Mapping.xlsx")
+    mapping_destination_names = load_mapping()
+    if not mapping_destination_names:
+        print("Mapping loading failed. Exiting analysis.")
+        return
 
     print("\nEnriching data with mappings...")
     window_df = enrich_window_df(window_df, mapping_destination_names)
