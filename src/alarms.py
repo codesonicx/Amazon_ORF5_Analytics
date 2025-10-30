@@ -34,7 +34,9 @@ def load_mapping() -> pd.DataFrame:
 
 
 # Read data
+print("Select the csv file with Alarm occurrences and duration by Part...")
 path = select_file()
+print(f"Loading data from {path}...")
 df = pd.read_csv(path)
 
 # Clean Part column
