@@ -1,146 +1,339 @@
-# 📦 Amazon ORF5 Analytics (and other sites)
+# Amazon Facility Log Analytics Toolkit
 
-**Turn raw Log Monitor data into clear, actionable Excel reports.**
+This repository provides a set of tools for analyzing Amazon Log Monitor data (S01–S04 messages). It automates the extraction, processing, and reporting of operational insights such as scanner performance, defects, recirculation loops, chute jam statistics, IAS productivity, destination breakdown, and E-Stop activity.
 
-This toolkit automates the analysis of Amazon facility logs (S01, S02, S03, S04 messages). Instead of staring at Matrix-style text files, you can run this tool to instantly generate charts, detect recirculation loops, analyze defects, and calculate scanner performance.
-
----
-
-## 🟢 Prerequisites
-
-Before you start, make sure you have:
-1.  **A Computer** (Windows, macOS, or Linux).
-2.  **Log Files**: The `.csv` files exported from Log Monitor.
-3.  **Mapping File**: An Excel file named `{SITE}_Destination_Mapping.xlsx` (e.g., `ORF5_Destination_Mapping.xlsx`) inside the `data/` folder.
-
-> **Note:** You do **not** need to manually install Python. The tool we use (`uv`) handles everything for you.
+The toolkit converts raw log files into structured Excel reports containing metrics, summaries, and charts.
 
 ---
 
-## 🛠️ Installation (First Time Setup)
+## Features
 
-If you have never used a terminal before, just follow these steps exactly.
+* Automated analysis of S01, S02, S03, and S04 Log Monitor files
+* Defect classification (no-read, multi-read, sort errors)
+* Recirculation and sort code 0 detection
+* Excel dashboards with charts and structured data
+* Jam chute statistics: frequency, downtime, and duration
+* Destination-level flow and sorting breakdown
+* IAS (Induction Assist System) productivity analysis
+* E-Stop event extraction and reporting
+* Tools for induction rate (PPH) and item measurement extraction
 
-### Step 1: Download this Repository
-1.  Scroll to the top of this page.
-2.  Click the green **<> Code** button and select **Download ZIP**.
-3.  Unzip the folder to your **Desktop** or **Documents**.
+---
 
-### Step 2: Open a Terminal
-1.  Open the unzipped folder.
-2.  **Right-click** in the empty white space of the folder.
-3.  Select **"Open in Terminal"** (Windows) or "Open PowerShell window here".
-    *   *Tip: If you don't see it, hold `Shift` + `Right-click`.*
+# 1. Prerequisites
 
-### Step 3: Install `uv`
-Copy and paste the command below into your terminal and press **Enter**:
+Before using this repository, ensure you have:
 
-**Windows (PowerShell):**
+1. A computer running Windows, macOS, or Linux
+2. Log Monitor `.csv` files (S01–S04 messages)
+3. A destination mapping file named:
+
+```
+{SITE}_Destination_Mapping.xlsx
+```
+
+placed inside the `data/` directory.
+
+Example:
+`data/ORF5_Destination_Mapping.xlsx`
+
+You do **not** need to install Python manually.
+The project uses **uv**, which automatically installs and manages Python environments.
+
+---
+
+# 2. Installation and Environment Setup
+
+This section explains how to install Visual Studio Code (VS Code), the Python extensions, and how to initialize the environment so the tools run correctly.
+
+---
+
+## 2.1 Install Visual Studio Code
+
+1. Download VS Code from:
+   [https://code.visualstudio.com](https://code.visualstudio.com)
+
+2. Install it using the default settings.
+
+3. Open VS Code and install the following extensions:
+
+   * **Python** (Microsoft)
+   * **Pylance**
+   * **Jupyter**
+
+These are required for:
+
+* Running Python scripts
+* Using notebooks
+* Autocompletion and debugging
+
+---
+
+## 2.2 Download This Repository
+
+1. Go to the GitHub page
+2. Click **Code → Download ZIP**
+3. Extract the ZIP file to any location (Desktop, Documents, etc.)
+
+---
+
+## 2.3 Open a Terminal Inside the Repository
+
+Windows:
+
+* Open the folder
+* Right-click in empty space
+* Select **Open in Terminal** or **Open PowerShell window here**
+
+macOS/Linux:
+
+* Open the folder
+* Right-click → **Open in Terminal**
+
+---
+
+## 2.4 Install `uv` (One-Time Setup)
+
+### Windows (PowerShell)
+
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-**Mac/Linux:**
+### macOS / Linux
+
 ```bash
 curl -lsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Step 4: Sync Project
-Type this command and press **Enter**:
+---
+
+## 2.5 Initialize the Environment
+
+Inside the project directory, run:
+
 ```bash
 uv sync
 ```
-*(This downloads the necessary tools to read Excel files and process data. It only needs to be done once.)*
+
+This downloads all required packages (pandas, numpy, openpyxl, matplotlib, tkinter, etc.).
+You only need to run this once unless dependencies change.
 
 ---
 
-## 🚀 How to Run the Scan Analyzer
+# 3. Running the Tools
 
-The main tool is `scan.py`. Here is how to run it and what to expect.
+All scripts are located inside `src/`.
 
-### 1. Start the Script
-In your terminal, type:
+To run any module, use:
+
+```bash
+uv run src/<script_name>.py
+```
+
+Each tool provides an interactive interface.
+
+---
+
+## 3.1 `scan.py` — Main Log Analysis (S04)
+
+Runs the primary scanning analysis pipeline.
+
 ```bash
 uv run src/scan.py
 ```
 
-### 2. Follow the On-Screen Prompts
-The script is interactive. It will ask you for the following:
+The script will prompt you to:
 
-1.  **Select Data File:** A window will pop up. Choose your raw Log Monitor file.
-2.  **Time Window:**
-    *   Enter start/end times (e.g., `14:00` to `15:00`) to focus on a specific shift.
-    *   *Tip: Just type **Full** to analyze the entire file.*
-3.  **Enter Site Name:**
-    *   Type your site code (e.g., `ORF5`, `SAT9`, `CNO8`).
-    *   *The script uses this to find the correct Mapping file in the `data/` folder.*
-4.  **Cleanup (False Positives):**
-    *   It will ask: *Do you want to clean up wrong sortCodes?*
-    *   **Type `no`** for a standard report.
-    *   **Type `yes`** if you have a list of specific Index IDs that you want to ignore (useful for removing known scanner glitches from the report).
+1. Select a Log Monitor raw `.csv` file
+2. Choose a time window or type “Full”
+3. Enter your site code (ORF5, SAT9, CNO8, etc.)
+4. Optionally remove false positives
 
-### 3. Get Your Report
-When finished, the script will say:
-`Analysis results saved to: data/reports/Analysis_SO4_...xlsx`
+Output generated:
 
-Go to the `data/reports` folder to open your new Excel file.
+```
+data/reports/Analysis_S04_*.xlsx
+```
 
----
+Contents include:
 
-## 🧠 What does `scan.py` actually do?
-
-If you are curious about what is happening under the hood, here is the logic:
-
-1.  **Filters the Noise:** It looks through thousands of log lines and throws away everything except "S04" messages (Message Code 54177).
-2.  **Decodes the "Matrix":** Raw logs look like `key:[value1, value2]`. The script creates a structured table, separating "Amazon Destinations" from "Beumer" and "Jackpot" destinations.
-3.  **Smart Package Detection:**
-    *   It groups multiple scans of the same item into a **Single Package ID**.
-    *   It detects if a package is **Normal**, **No Read** (scanner couldn't see it), or **Multi Read** (confusing barcodes).
-4.  **Recirculation Detection:** It identifies packages that are stuck in a loop (Sort Code 0) and filters them out so they don't ruin your statistics.
-5.  **Visual Reporting:** It generates an Excel file with:
-    *   **Pie Charts:** Showing defect percentages.
-    *   **Bar Charts:** Showing top sort reasons.
-    *   **Stacked Charts:** Comparing Sort Reasons vs. Amazon Destinations.
+* Scan defects
+* Sort reason breakdown
+* Recirculation detection
+* Destination flow statistics
+* Charts (pie, bar, and stacked visuals)
 
 ---
 
-## 📊 Understanding the Excel Output
+## 3.2 `JamChuteStats.py` — Chute Jam Statistics
 
-*   **`Analysis_Results`**: The dashboard. Contains summary tables, the "Jackpot" breakdown, and all charts.
-*   **`Raw_Data`**: The data after basic formatting but before deep analysis.
-*   **`Scan_Defects`**: A list of items with Sort Codes 8, 9, or 10 (Scan Defects).
-*   **`Window_Data`**: The fully processed data used for the charts.
+Calculates:
+
+* Jam counts
+* Total downtime
+* Average jam duration
+* Jam frequency per chute
+
+Run:
+
+```bash
+uv run src/JamChuteStats.py
+```
+
+Output:
+
+```
+The clipboard now contains the JamChuteStats summary table ready to be pasted into Excel.
+```
 
 ---
 
-## ❓ Troubleshooting
+## 3.3 `DBS.py` — Destination Breakdown Summary
 
-**"Mapping file not found"**
-*   Ensure you have a file named exactly `{SITE}_Destination_Mapping.xlsx` in the `data/` folder.
-*   Example: If you typed `ORF5` as the site name, you must have `data/ORF5_Destination_Mapping.xlsx`.
+Analyzes:
 
-**"The term 'uv' is not recognized"**
-*   Close your terminal window completely and open a new one. Windows needs to refresh to see the new tool.
+* Sorting flow by destination
+* Misroutes and jackpot activity
+* Most common destinations
+* Ratio of each sort code by lane
 
-**Script crashes immediately**
-*   Check if your raw log file is empty.
-*   Make sure you are running the command from the main folder (where `pyproject.toml` is located).
+Run:
+
+```bash
+uv run src/DBS.py
+```
+
+Output:
+
+```
+The clipboard now contains the DBS summary table ready to be pasted into Excel.
+```
 
 ---
 
-## Extra
+## 3.4 `IAS.py` — Induction Assist System Analysis
 
-This repository has another built in scripts that can help you to retrive more information from the logs, and in order to run those scripts you can use the following commands:
+Computes:
 
-- Calculate the rate per Induction using S01 messages: 
+* Items inducted per associate
+* Induction rate per hour
+* Idle periods
+* Trend charts
+
+Run:
+
+```bash
+uv run src/IAS.py
+```
+
+Output:
+
+```
+The clipboard now contains the IAS summary table ready to be pasted into Excel.
+```
+
+---
+
+## 3.5 `Estops.py` — E-Stop Event Extraction
+
+Provides:
+
+* E-Stop events
+* Zone-level analysis
+* Duration and frequency
+* Summary of operational impact
+
+Run:
+
+```bash
+uv run src/Estops.py
+```
+
+Output:
+
+```
+The clipboard now contains the Estop summary table ready to be pasted into Excel.
+```
+
+---
+
+# 4. Additional Tools
+
+## 4.1 Induction Rate (PPH) Using S01 Messages
+
 ```bash
 uv run src/PPH.py
 ```
 
-- Calculate the item measuremnets using S02 and S03 messages: 
-open vscode using the command:
+Provides:
+
+* Packages per hour
+* Induction throughput
+* Delay periods
+
+---
+
+## 4.2 Item Measurements (S02/S03)
+
+1. Open the project in VS Code:
+
 ```bash
 code .
 ```
 
-Then open the folder `notebooks` and run the notebook `Item_Measurements.ipynb`, you must have to install all the extension required to run jupyter notebooks in vscode.
+2. Open:
+
+```
+notebooks/Item_Measurements.ipynb
+```
+
+3. Ensure the Jupyter extension is installed.
+
+This notebook extracts:
+
+* Length
+* Width
+* Height
+* Volume
+  from S02/S03 message data.
+
+---
+
+# 5. Excel Output Overview
+
+| Sheet Name       | Purpose                          |
+| ---------------- | -------------------------------- |
+| Analysis_Results | Main dashboard with charts       |
+| Raw_Data         | Structured cleaned raw log lines |
+| Window_Data      | Processed data used for analysis |
+| Scan_Defects     | Items with sort codes 8, 9, 10   |
+| Jam Data         | Chute jam statistics             |
+| IAS Summary      | Associate productivity           |
+| PPH Summary      | Induction rates                  |
+
+---
+
+# 6. Troubleshooting
+
+### “Mapping file not found”
+
+Ensure a mapping file exists using this pattern:
+
+```
+data/{SITE}_Destination_Mapping.xlsx
+```
+
+### “‘uv’ is not recognized”
+
+* Close the terminal window
+* Open a new one
+  Windows requires a refresh after installation.
+
+### Script closes immediately
+
+Make sure you are in the correct directory, where `pyproject.toml` is located.
+
+### Cannot open notebook
+
+Install the **Jupyter** extension in VS Code.
